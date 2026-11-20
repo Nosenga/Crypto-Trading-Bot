@@ -67,6 +67,13 @@ namespace TradingBot.Services
             return Task.FromResult(orderId);
         }
 
+        public Task<string> PlaceClosingMarketOrderAsync(
+            string symbol, string side, decimal quantity)
+        {
+            var orderId = Guid.NewGuid().ToString();
+            return Task.FromResult(orderId);
+        }
+
         public Task<string> PlaceLimitOrderAsync(
             string symbol, string side, decimal quantity, decimal price)
         {

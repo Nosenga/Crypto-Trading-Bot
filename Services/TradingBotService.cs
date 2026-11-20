@@ -44,6 +44,15 @@ namespace TradingBot.Services
                     $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
             }
 
+            // Phase 1: long-only spot. Opening a short on Binance Spot is
+            // not possible (you can only sell coins you own). Sell is
+            // exit-only and lives in CloseTradeAsync. Reject any attempt to
+            // open a Sell here rather than silently selling user coins.
+            if (type == TradeType.Sell)
+                throw new InvalidOperationException(
+                    "Sell is exit-only (long-only spot). Use CloseTradeAsync to exit a long.");
+
+
             // 1. Get price FROM THE BROKER instead of MarketDataService
             var currentPrice = await _brokerClient.GetCurrentPriceAsync(symbol);
 
@@ -89,17 +98,20 @@ namespace TradingBot.Services
                 Notes = brokerOrderId // Store the exchange's Order ID here
             };
 
-            // Update portfolio
-            if (type == TradeType.Buy)
-                portfolio.CurrentBalance -= totalCost;
-            else
-                portfolio.CurrentBalance += totalCost;
+            // Update portfolio — Buy only. CurrentBalance is CASH ONLY;
+            // realized P&L is tracked separately in RealizedPnL (see
+            // CloseTradeAsync). This is the Phase 1 accounting model:
+            //   CurrentBalance = free cash
+            //   RealizedPnL    = sum of closed-trade profits
+            //   TotalEquity    = CurrentBalance + market value of open longs
+            portfolio.CurrentBalance -= totalCost;
 
-            portfolio.TotalEquity = portfolio.CurrentBalance;
             portfolio.LastUpdated = DateTime.UtcNow;
-
             _context.Trades.Add(trade);
             await _context.SaveChangesAsync();
+
+            // Refresh after persisting the trade so its market value is included.
+            await UpdatePortfolioAsync();
 
             _logger.LogInformation(
                 "Executed {Type} trade for {Symbol}: {Quantity} @ {Price}",
@@ -141,7 +153,7 @@ namespace TradingBot.Services
             string? closeOrderId;
             try
             {
-                closeOrderId = await _brokerClient.PlaceMarketOrderAsync(
+                closeOrderId = await _brokerClient.PlaceClosingMarketOrderAsync(
                     trade.Symbol, closeSide, trade.Quantity);
             }
             catch (Exception ex)
@@ -168,12 +180,18 @@ namespace TradingBot.Services
 
             trade.Status = TradeStatus.Closed;
 
-            // Update portfolio
+            // Update portfolio (Phase 1 accounting model — single source of truth).
+            // CurrentBalance is CASH ONLY. When we opened the long we did
+            //   CurrentBalance -= (quantity * entryPrice)
+            // so on close we return exactly that cost basis to cash:
+            //   CurrentBalance += (quantity * entryPrice)
+            // The profit/loss (exit - entry) * quantity is recorded ONLY in
+            // RealizedPnL. Cash + realized P&L then reconcile correctly, and
+            // TotalEquity (computed in UpdatePortfolioAsync) stays consistent.
+            // Do NOT also add (currentPrice * quantity) to CurrentBalance —
+            // that was the 308M double-count.
             var portfolio = await GetPortfolioAsync();
-
-            // FIXED MATH: When closing, we add the market value of the asset back to cash.
-            // We also add the realized profit/loss separately for reporting.
-            portfolio.CurrentBalance += (trade.Quantity * currentPrice);
+            portfolio.CurrentBalance += (trade.Quantity * trade.EntryPrice);
             portfolio.RealizedPnL += trade.ProfitLoss ?? 0;
 
             if (trade.ProfitLoss > 0) portfolio.WinningTrades++;
@@ -207,12 +225,8 @@ namespace TradingBot.Services
 
         public async Task<List<Trade>> GetOpenTradesAsync()
         {
-            // Phase 1 TODO: StopLossHit / TakeProfitHit trades are excluded
-            // here (correct — they're no longer open) AND excluded from the
-            // closed count in GetDashboardStatsAsync (which filters Status
-            // == Closed). They currently vanish from both open and closed
-            // stats. Phase 1 adds `Status == Closed || StopLossHit ||
-            // TakeProfitHit` to the closed-trade queries.
+            // StopLossHit / TakeProfitHit trades are excluded here because
+            // they are closed, and included in closed-trade dashboard stats.
             return await _context.Trades
                 .Where(t => t.Status == TradeStatus.Executed)
                 .OrderByDescending(t => t.ExecutedAt)
@@ -279,8 +293,22 @@ namespace TradingBot.Services
             unrealizedPnL += (trade.EntryPrice - currentPrice) * trade.Quantity;
     }
 
+            // CurrentBalance excludes realized P&L, so include it separately.
+            decimal openMarketValue = 0m;
+            foreach (var trade in openTrades)
+            {
+                if (trade.Type != TradeType.Buy)
+                    continue;
+
+                var currentPrice = prices.GetValueOrDefault(trade.Symbol, 0);
+                if (currentPrice > 0)
+                    openMarketValue += trade.Quantity * currentPrice;
+            }
+
             portfolio.UnrealizedPnL = unrealizedPnL;
-            portfolio.TotalEquity = portfolio.CurrentBalance + unrealizedPnL;
+            portfolio.TotalEquity = portfolio.CurrentBalance
+                + portfolio.RealizedPnL
+                + openMarketValue;
             portfolio.LastUpdated = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -340,28 +368,9 @@ namespace TradingBot.Services
                 }
             }
         }
-        // --- LOGIC FOR SELL (SHORT) POSITIONS ---
-        else if (trade.Type == TradeType.Sell)
-        {
-            if (trade.StopLoss.HasValue && currentPrice >= trade.StopLoss.Value)
-            {
-                var closed = await CloseTradeAsync(trade.Id);
-                if (closed != null)
-                {
-                    closed.Status = TradeStatus.StopLossHit;
-                    anyClosed = true;
-                }
-            }
-            else if (trade.TakeProfit.HasValue && currentPrice <= trade.TakeProfit.Value)
-            {
-                var closed = await CloseTradeAsync(trade.Id);
-                if (closed != null)
-                {
-                    closed.Status = TradeStatus.TakeProfitHit;
-                    anyClosed = true;
-                }
-            }
-        }
+        // Phase 1: long-only spot. Short SL/TP logic removed.
+        // If a Sell-type trade ever exists in the DB (legacy data), it will
+        // be ignored here — Phase 1 DB wipe removes old shorts anyway.
     }
 
     if (anyClosed) await _context.SaveChangesAsync();
@@ -420,8 +429,8 @@ namespace TradingBot.Services
                     var isBuySignal = signal.Type == SignalType.Buy || signal.Type == SignalType.StrongBuy;
                     var isSellSignal = signal.Type == SignalType.Sell || signal.Type == SignalType.StrongSell;
 
-                    // SKIP if an open trade for this strategy/symbol already exists
-                    if (openTrade != null)
+                    // Skip duplicate buys, but allow sell signals to reach the exit path.
+                    if (openTrade != null && isBuySignal)
                     {
                         signal.IsExecuted = true;
                         continue;
@@ -493,68 +502,29 @@ namespace TradingBot.Services
                                 signal.Symbol, strategy.Name);
                         }
                     }
-                    // --- SELL LOGIC (SHORT) ---
+                    // --- SELL SIGNAL = EXIT-ONLY (long-only spot) ---
                     else if (isSellSignal)
                     {
-
-                        var maxPosSize = _configuration.GetValue<decimal>("TradingBot:MaxPositionSize", 500m);
-
-
-
-                        var riskAmount = portfolio.CurrentBalance * (strategy.RiskPerTradePercent / 100);
-                        var stopLossAmount = signal.Price * (strategy.StopLossPercent / 100);
-                        var rawQuantity = stopLossAmount > 0 ? riskAmount / stopLossAmount : 0;
-
-                        var rawCost = rawQuantity * signal.Price;
-
-                        decimal quantity = rawQuantity;
-                        if (rawCost > maxPosSize)
+                        if (openTrade == null || openTrade.Type != TradeType.Buy)
                         {
-                            quantity = maxPosSize / signal.Price;
-                        }
-
-                        if (quantity <= 0)
-                        {
-                            signal.IsExecuted = true;
-                            continue;
-                        }
-
-                        var cost = quantity * signal.Price;
-
-                        //--- SAFETY CHECK FOR SELL ---
-                        var maxPositionSize = _configuration.GetValue<decimal>("TradingBot:MaxPositionSize", 500m);
-                        if (cost > maxPositionSize)
-                        {
-                            _logger.LogWarning("SELL Trade cost of {Cost} exceeds MaxPositionSize of {Max}. Skipping trade.", cost, maxPositionSize);
-                            signal.IsExecuted = true;
-                            continue;
-                        }
-                        //------------------------------
-
-                        // Add the balance check to prevent "Insufficient funds" crash on Sell
-                        if (cost > portfolio.CurrentBalance)
-                        {
-                            signal.IsExecuted = true;
-                            continue;
-                        }
-
-                        // For SHORT positions: Stop Loss is ABOVE the current price, Take Profit is BELOW
-                        var stopLossPrice = signal.Price * (1 + strategy.StopLossPercent / 100);
-                        var takeProfitPrice = signal.Price * (1 - strategy.TakeProfitPercent / 100);
-
-                        try
-                        {
-                            await ExecuteTradeAsync(
-                                signal.Symbol, TradeType.Sell, quantity,
-                                strategy.Name, stopLossPrice, takeProfitPrice,
-                                signal.Confidence, signal.Source);
-                            actionsTaken++;
-                        }
-                        catch (InvalidOperationException ex)
-                        {
-                            _logger.LogWarning(ex,
-                                "Auto-trade short skipped for {Symbol} ({Strategy})",
+                            _logger.LogInformation(
+                                "Sell signal for {Symbol} ({Strategy}) ignored: no open long to close (long-only spot)",
                                 signal.Symbol, strategy.Name);
+                        }
+                        else
+                        {
+                            try
+                            {
+                                var closedTrade = await CloseTradeAsync(openTrade.Id);
+                                if (closedTrade != null)
+                                    actionsTaken++;
+                            }
+                            catch (InvalidOperationException ex)
+                            {
+                                _logger.LogWarning(ex,
+                                    "Auto-trade exit skipped for {Symbol} ({Strategy})",
+                                    signal.Symbol, strategy.Name);
+                            }
                         }
                     }
 
@@ -579,8 +549,17 @@ namespace TradingBot.Services
         {
             var portfolio = await UpdatePortfolioAsync();
             var openTrades = await GetOpenTradesAsync();
+            // Phase 1: StopLossHit / TakeProfitHit trades are closed too.
+            // Excluding them understated closed-trade stats and made SL/TP
+            // exits vanish from win-rate and P&L totals.
+            var closedStatuses = new[]
+            {
+                TradeStatus.Closed,
+                TradeStatus.StopLossHit,
+                TradeStatus.TakeProfitHit
+            };
             var recentTrades = await _context.Trades
-                .Where(t => t.Status == TradeStatus.Closed)
+                .Where(t => closedStatuses.Contains(t.Status))
                 .OrderByDescending(t => t.ClosedAt)
                 .Take(20)
                 .ToListAsync();

@@ -121,14 +121,29 @@ public class BinanceBroker : IBrokerClient
         }
     }
 
-    public async Task<string> PlaceMarketOrderAsync(
+    public Task<string> PlaceMarketOrderAsync(
         string symbol,
         string side,
-        decimal quantity)
+        decimal quantity) =>
+        PlaceMarketOrderAsyncCoreAsync(
+            symbol, side, quantity, allowWhenKillSwitchActive: false);
+
+    public Task<string> PlaceClosingMarketOrderAsync(
+        string symbol,
+        string side,
+        decimal quantity) =>
+        PlaceMarketOrderAsyncCoreAsync(
+            symbol, side, quantity, allowWhenKillSwitchActive: true);
+
+    private async Task<string> PlaceMarketOrderAsyncCoreAsync(
+        string symbol,
+        string side,
+        decimal quantity,
+        bool allowWhenKillSwitchActive)
     {
         EnsureLiveOrdersAreEnabled();
 
-        if (_safety.IsKillSwitchActive)
+        if (_safety.IsKillSwitchActive && !allowWhenKillSwitchActive)
             throw new InvalidOperationException(
                 $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
 

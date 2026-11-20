@@ -38,7 +38,7 @@ namespace TradingBot.Data
                     Id = 1,
                     InitialBalance = 1000000m,
                     CurrentBalance = 1000000m,
-                    TotalEquity = 100000m
+                    TotalEquity = 1000000m // Phase 1: was 100000m — factor-of-10 typo
                 }
             );
 
