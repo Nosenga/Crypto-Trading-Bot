@@ -24,6 +24,15 @@ namespace TradingBot.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal RealizedPnL { get; set; }
 
+        // Phase 1 TODO (accounting model): CurrentBalance currently carries
+        // realized P&L (CloseTradeAsync does `+=`), AND RealizedPnL also
+        // tracks it. TotalPnL below double-counts if anything sums
+        // CurrentBalance + TotalPnL. The 308M phantom balance comes from
+        // this inconsistency, not from one buggy line. Phase 1 picks ONE
+        // source of truth (recommended: CurrentBalance = cash only,
+        // realized P&L lives only in RealizedPnL). Do NOT change the
+        // semantics without a migration/backfill — the existing DB has
+        // historical balances computed under the old model.
         [Column(TypeName = "decimal(18,2)")]
         public decimal TotalPnL => RealizedPnL + UnrealizedPnL;
 
