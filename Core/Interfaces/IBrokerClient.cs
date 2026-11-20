@@ -16,6 +16,7 @@ namespace TradingBot.Core.Interfaces
 
         // 3. Order Execution
         Task<string> PlaceMarketOrderAsync(string symbol, string side, decimal quantity);
+        Task<string> PlaceClosingMarketOrderAsync(string symbol, string side, decimal quantity);
         Task<string> PlaceLimitOrderAsync(string symbol, string side, decimal quantity, decimal price);
         Task<bool> CancelOrderAsync(string orderId);
         

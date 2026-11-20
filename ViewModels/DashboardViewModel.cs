@@ -1,4 +1,5 @@
 // ViewModels/DashboardViewModel.cs
+using System.ComponentModel.DataAnnotations;
 using TradingBot.Models;
 
 namespace TradingBot.ViewModels
@@ -25,6 +26,7 @@ namespace TradingBot.ViewModels
     {
         public string Symbol { get; set; } = "BTCUSDT";
         public TradeType Type { get; set; }
+        [Range(0.00000001, 1_000_000,ErrorMessage = "Quantity must be between 0.00000001 and 1,000,000 asset units.")]
         public decimal Quantity { get; set; }
         public decimal? StopLoss { get; set; }
         public decimal? TakeProfit { get; set; }
