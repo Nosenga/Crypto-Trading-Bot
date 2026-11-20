@@ -1,0 +1,684 @@
+﻿<!-- Views/Shared/_Layout.cshtml -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - TradingBot Pro</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+          rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+          rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Nunito:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap"
+          rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        /* ============================================================
+           DESIGN TOKENS — "Dark Frutiger Aero" theme
+           Subject: an always-on trading bot, reimagined as glossy
+           2007-era glass: translucent panels, light-reflection sheens,
+           bubble/pill controls, and soft bokeh drifting behind everything.
+           ============================================================ */
+        :root {
+            --bg-void: #050c16;
+            --bg-void-2: #081b2c;
+            --bg-panel: rgba(20, 46, 68, 0.5);
+            --bg-panel-raised: rgba(30, 60, 86, 0.6);
+            --bg-panel-hover: rgba(42, 78, 108, 0.68);
+            --bg-secondary: var(--bg-panel-raised);
+
+            --accent-cyan: #5ce1ff;    /* primary / info / active state — glossy sky blue */
+            --accent-mint: #9dff6c;    /* buy / positive — Aero lime */
+            --accent-magenta: #ff7a93; /* sell / negative — glossy coral */
+            --accent-amber: #ffd166;   /* hold / neutral — glossy gold */
+
+            /* Aliases: several views reference these names directly */
+            --accent-blue: var(--accent-cyan);
+            --accent-green: var(--accent-mint);
+            --accent-red: var(--accent-magenta);
+            --accent-gold: var(--accent-amber);
+
+            --text-primary: #eef8ff;
+            --text-secondary: #8fb2c7;
+            --border-color: rgba(255, 255, 255, 0.14);
+            --glass-border: rgba(255, 255, 255, 0.24);
+            --glass-sheen: rgba(255, 255, 255, 0.32);
+            --border-glow-cyan: rgba(92, 225, 255, 0.45);
+
+            --font-display: 'Quicksand', system-ui, sans-serif;
+            --font-ui: 'Nunito', system-ui, sans-serif;
+            --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+
+            --radius-lg: 22px;
+            --radius-md: 16px;
+            --radius-pill: 999px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: linear-gradient(180deg, var(--bg-void) 0%, var(--bg-void-2) 100%);
+            color: var(--text-primary);
+            font-family: var(--font-ui);
+            min-height: 100vh;
+            padding-left: 240px; /* sidebar width */
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Signature element: drifting glass bokeh, glowing behind every panel */
+        .bokeh-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .bokeh-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(70px);
+            opacity: 0.32;
+        }
+
+        .bokeh-orb.aqua {
+            width: 440px; height: 440px;
+            background: radial-gradient(circle, #5ce1ff, transparent 70%);
+            top: -100px; left: -80px;
+            animation: driftA 24s ease-in-out infinite alternate;
+        }
+
+        .bokeh-orb.lime {
+            width: 360px; height: 360px;
+            background: radial-gradient(circle, #9dff6c, transparent 70%);
+            bottom: 8%; left: 22%;
+            animation: driftB 28s ease-in-out infinite alternate;
+        }
+
+        .bokeh-orb.coral {
+            width: 300px; height: 300px;
+            background: radial-gradient(circle, #ff9ab0, transparent 70%);
+            top: 34%; right: -70px;
+            animation: driftA 32s ease-in-out infinite alternate-reverse;
+        }
+
+        .bokeh-orb.gold {
+            width: 260px; height: 260px;
+            background: radial-gradient(circle, #ffe29a, transparent 70%);
+            bottom: -70px; right: 18%;
+            animation: driftB 20s ease-in-out infinite alternate;
+        }
+
+        @@keyframes driftA {
+            from { transform: translate(0, 0) scale(1); }
+            to { transform: translate(50px, 34px) scale(1.08); }
+        }
+
+        @@keyframes driftB {
+            from { transform: translate(0, 0) scale(1); }
+            to { transform: translate(-36px, -28px) scale(1.05); }
+        }
+
+        @@media (prefers-reduced-motion: reduce) {
+            .bokeh-orb { animation: none; }
+        }
+
+        ::selection { background: var(--accent-cyan); color: #04131c; }
+
+        a { color: var(--accent-cyan); }
+
+        /* Visible keyboard focus everywhere */
+        a:focus-visible, button:focus-visible, .nav-link:focus-visible,
+        .form-control:focus-visible, .form-select:focus-visible {
+            outline: 2px solid var(--accent-cyan);
+            outline-offset: 2px;
+        }
+
+        /* --- Sidebar --- */
+        .sidebar-signal {
+            position: fixed;
+            top: 0; left: 0; bottom: 0;
+            z-index: 1030;
+            width: 240px;
+            background: rgba(10, 22, 36, 0.55);
+            backdrop-filter: blur(20px) saturate(160%);
+            -webkit-backdrop-filter: blur(20px) saturate(160%);
+            border-right: 1px solid var(--glass-border);
+            box-shadow: 4px 0 40px rgba(0, 0, 0, 0.35), inset -1px 0 0 rgba(255, 255, 255, 0.06);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .brand {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 1.05rem;
+            letter-spacing: 0.02em;
+            color: var(--text-primary);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            padding: 1.4rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+
+        .brand i {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px; height: 34px;
+            border-radius: 50%;
+            color: #04131c;
+            font-size: 1rem;
+            background: radial-gradient(circle at 35% 25%, #d4f6ff, var(--accent-cyan) 55%, #1fa7d6 100%);
+            box-shadow: 0 0 14px var(--border-glow-cyan), inset 0 2px 3px rgba(255, 255, 255, 0.6);
+        }
+
+        .brand .brand-sub {
+            color: var(--accent-cyan);
+        }
+
+        /* Live pulse trace, restyled as a glowing glass capsule */
+        .pulse-line {
+            height: 28px;
+            margin: 0 1rem 0.75rem;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-pill);
+            flex-shrink: 0;
+        }
+
+        .pulse-line svg { width: 200%; height: 100%; display: block; }
+
+        .pulse-line .trace {
+            fill: none;
+            stroke: url(#traceGradient);
+            stroke-width: 2;
+            stroke-linecap: round;
+            filter: drop-shadow(0 0 4px rgba(92, 225, 255, 0.6));
+            animation: traceMove 6s linear infinite;
+        }
+
+        @@keyframes traceMove {
+            from { transform: translateX(0); }
+            to { transform: translateX(-50%); }
+        }
+
+        @@media (prefers-reduced-motion: reduce) {
+            .status-dot, .pulse-line .trace { animation: none; }
+        }
+
+        .nav-links {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            padding: 0.5rem 0.75rem 1rem;
+            flex: 1;
+        }
+
+        .nav-links .nav-link {
+            position: relative;
+            color: var(--text-secondary) !important;
+            font-family: var(--font-ui);
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            padding: 0.7rem 1rem !important;
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            border-radius: var(--radius-pill);
+            border: 1px solid transparent;
+            transition: color 0.2s, background 0.2s, border-color 0.2s, transform 0.2s;
+        }
+
+        .nav-links .nav-link i {
+            font-size: 0.8rem;
+            width: 1.4rem; height: 1.4rem;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .nav-links .nav-link:hover {
+            color: var(--text-primary) !important;
+            background: var(--bg-panel-hover);
+            transform: translateX(2px);
+        }
+
+        .nav-links .nav-link.active {
+            color: #04131c !important;
+            background: linear-gradient(180deg, #a7ecff 0%, var(--accent-cyan) 55%, #2bb8e6 100%);
+            border-color: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 4px 16px var(--border-glow-cyan), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+        }
+
+        .nav-links .nav-link.active i { background: rgba(255, 255, 255, 0.35); }
+
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin: 0 1rem 1rem;
+            padding: 0.7rem 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-pill);
+            flex-shrink: 0;
+        }
+
+        .status-dot {
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #eaffdf, var(--accent-mint) 60%);
+            box-shadow: 0 0 6px var(--accent-mint), 0 0 14px var(--accent-mint);
+            animation: dotPulse 1.8s ease-in-out infinite;
+        }
+
+        @@keyframes dotPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(0.82); }
+        }
+
+        /* Mobile sidebar toggler + overlay */
+        .sidebar-toggler {
+            display: none;
+            position: fixed;
+            top: 1rem; left: 1rem;
+            z-index: 1040;
+            width: 44px; height: 44px;
+            align-items: center;
+            justify-content: center;
+            background: rgba(30, 60, 86, 0.6);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--glass-border);
+            border-radius: 50%;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+            color: var(--text-primary);
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(3, 8, 14, 0.55);
+            backdrop-filter: blur(2px);
+            z-index: 1025;
+        }
+
+        /* --- Main Content --- */
+        .main-content {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 2.5rem 1.5rem 3rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-bottom: 1.75rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .page-header h1 {
+            font-family: var(--font-display);
+            font-size: 1.65rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .page-header .page-meta {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        /* --- Cards: glossy glass panels with a light-reflection sheen --- */
+        .card-trading, .stat-card {
+            background: var(--bg-panel);
+            backdrop-filter: blur(18px) saturate(160%);
+            -webkit-backdrop-filter: blur(18px) saturate(160%);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 10px 34px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card-trading::before, .stat-card::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 50%;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 100%);
+            pointer-events: none;
+        }
+
+        .card-trading {
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-trading .card-header {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1rem;
+            margin-bottom: 1rem;
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 1.05rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+        }
+
+        .stat-card {
+            border-radius: var(--radius-md);
+            padding: 1.25rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 14px 32px rgba(92, 225, 255, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        }
+
+        .stat-card.is-positive { box-shadow: 0 10px 34px rgba(157, 255, 108, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
+        .stat-card.is-negative { box-shadow: 0 10px 34px rgba(255, 122, 147, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
+        .stat-card.is-neutral  { box-shadow: 0 10px 34px rgba(255, 209, 102, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
+
+        .stat-card .stat-value {
+            font-family: var(--font-mono);
+            font-size: 1.8rem;
+            font-weight: 700;
+            position: relative;
+        }
+
+        .stat-card .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-top: 0.35rem;
+            position: relative;
+        }
+
+        .positive { color: var(--accent-mint) !important; }
+        .negative { color: var(--accent-magenta) !important; }
+        .neutral { color: var(--accent-amber) !important; }
+
+        /* --- Badges: glossy glass pills --- */
+        .badge-buy, .badge-sell, .badge-hold {
+            font-family: var(--font-mono);
+            padding: 4px 14px;
+            border-radius: var(--radius-pill);
+            font-weight: 700;
+            font-size: 0.75rem;
+            letter-spacing: 0.04em;
+            border: 1px solid;
+            backdrop-filter: blur(8px);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+        }
+
+        .badge-buy {
+            background: rgba(157, 255, 108, 0.12);
+            color: var(--accent-mint);
+            border-color: rgba(157, 255, 108, 0.5);
+        }
+
+        .badge-sell {
+            background: rgba(255, 122, 147, 0.12);
+            color: var(--accent-magenta);
+            border-color: rgba(255, 122, 147, 0.5);
+        }
+
+        .badge-hold {
+            background: rgba(255, 209, 102, 0.12);
+            color: var(--accent-amber);
+            border-color: rgba(255, 209, 102, 0.5);
+        }
+
+        .price-live { animation: pulse 2s infinite; }
+
+        @@keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        @@media (prefers-reduced-motion: reduce) {
+            .price-live { animation: none; }
+        }
+
+        /* --- Table --- */
+        .table-trading { color: var(--text-primary); font-family: var(--font-mono); font-size: 0.9rem; }
+
+        .table-trading thead th {
+            border-color: var(--border-color);
+            color: var(--text-secondary);
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.06em;
+            font-family: var(--font-ui);
+        }
+
+        .table-trading td { border-color: var(--border-color); vertical-align: middle; }
+
+        .table-trading tbody tr { transition: background 0.15s; }
+
+        .table-trading tbody tr:hover { background: var(--bg-panel-hover); }
+
+        /* --- Buttons: glossy candy pills --- */
+        .btn-buy {
+            background: rgba(157, 255, 108, 0.1);
+            color: var(--accent-mint);
+            font-weight: 700;
+            border: 1px solid var(--accent-mint);
+            border-radius: var(--radius-pill);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            transition: all 0.2s;
+        }
+
+        .btn-buy:hover {
+            background: linear-gradient(180deg, #d8ffc2 0%, var(--accent-mint) 55%, #6fdb3a 100%);
+            color: #08210a;
+            border-color: rgba(255, 255, 255, 0.6);
+            box-shadow: 0 4px 20px rgba(157, 255, 108, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+        }
+
+        .btn-sell {
+            background: rgba(255, 122, 147, 0.1);
+            color: var(--accent-magenta);
+            font-weight: 700;
+            border: 1px solid var(--accent-magenta);
+            border-radius: var(--radius-pill);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            transition: all 0.2s;
+        }
+
+        .btn-sell:hover {
+            background: linear-gradient(180deg, #ffd6de 0%, var(--accent-magenta) 55%, #e8455f 100%);
+            color: #260810;
+            border-color: rgba(255, 255, 255, 0.6);
+            box-shadow: 0 4px 20px rgba(255, 122, 147, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+        }
+
+        /* --- Forms --- */
+        .form-control, .form-select {
+            background: var(--bg-panel-raised);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: var(--radius-md);
+        }
+
+        .form-control:focus, .form-select:focus {
+            background: var(--bg-panel-raised);
+            border-color: var(--accent-cyan);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 0.2rem rgba(92, 225, 255, 0.22);
+        }
+
+        /* --- Confidence bar --- */
+        .confidence-bar {
+            height: 6px;
+            background: var(--bg-panel-raised);
+            border-radius: var(--radius-pill);
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            border-radius: var(--radius-pill);
+            transition: width 0.5s;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .chart-container { position: relative; height: 300px; }
+
+        /* --- Mobile: sidebar becomes an off-canvas drawer --- */
+        @@media (max-width: 991.98px) {
+            body { padding-left: 0; }
+
+            .sidebar-signal {
+                transform: translateX(-100%);
+                transition: transform 0.25s ease;
+                width: 260px;
+            }
+
+            body.sidebar-open .sidebar-signal { transform: translateX(0); }
+            body.sidebar-open .sidebar-overlay { display: block; }
+
+            .sidebar-toggler { display: flex; }
+
+            .main-content { padding-top: 4.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Signature: drifting glass bokeh, always behind the panels -->
+    <div class="bokeh-layer" aria-hidden="true">
+        <div class="bokeh-orb aqua"></div>
+        <div class="bokeh-orb lime"></div>
+        <div class="bokeh-orb coral"></div>
+        <div class="bokeh-orb gold"></div>
+    </div>
+
+    <!-- Mobile sidebar toggler -->
+    <button class="sidebar-toggler" type="button" onclick="document.body.classList.toggle('sidebar-open')" aria-label="Toggle navigation">
+        <i class="fas fa-bars"></i>
+    </button>
+    <div class="sidebar-overlay" onclick="document.body.classList.remove('sidebar-open')" aria-hidden="true"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar-signal">
+        <a class="brand" href="@Url.Action("Index", "Dashboard")">
+            <i class="fas fa-robot"></i>
+            TRADING<span class="brand-sub">BOT</span>_PRO
+        </a>
+
+        <!-- Signature: live pulse-line trace -->
+        <div class="pulse-line" aria-hidden="true">
+            <svg viewBox="0 0 400 20" preserveAspectRatio="none">
+                <defs>
+                    <linearGradient id="traceGradient" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stop-color="#5ce1ff" />
+                        <stop offset="50%" stop-color="#9dff6c" />
+                        <stop offset="100%" stop-color="#5ce1ff" />
+                    </linearGradient>
+                </defs>
+                <polyline class="trace" points="0,10 30,10 38,10 42,2 46,18 50,10 60,10 90,10 98,10 102,4 106,16 110,10 120,10 150,10 400,10 430,10 438,10 442,2 446,18 450,10 460,10 490,10 498,10 502,4 506,16 510,10 520,10 550,10 800,10" />
+            </svg>
+        </div>
+
+        <div class="nav-links">
+            <a class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Dashboard" ? "active" : "")"
+               href="@Url.Action("Index", "Dashboard")">
+                <i class="fas fa-chart-line"></i> Dashboard
+            </a>
+            <a class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Trading" ? "active" : "")"
+               href="@Url.Action("Index", "Trading")">
+                <i class="fas fa-exchange-alt"></i> Trading
+            </a>
+            <a class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Strategy" ? "active" : "")"
+               href="@Url.Action("Index", "Strategy")">
+                <i class="fas fa-chess"></i> Strategies
+            </a>
+            <a class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Backtest" ? "active" : "")"
+               href="@Url.Action("Index", "Backtest")">
+                <i class="fas fa-flask"></i> Backtest
+            </a>
+            <a class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Admin" ? "active" : "")"
+               href="@Url.Action("Index", "Admin")">
+                <i class="fas fa-shield-alt"></i> Admin
+            </a>
+        </div>
+
+        <div class="status-pill">
+            <span class="status-dot"></span>
+            <span>RUNNING</span>
+            <span style="opacity:0.5;" id="lastUpdate">&middot; --:--</span>
+        </div>
+        <form method="post" asp-controller="Account" asp-action="Logout" class="px-3 pb-3">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
+                <i class="fas fa-sign-out-alt"></i> Sign out
+            </button>
+        </form>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        @if (TempData["Success"] != null)
+        {
+            <div class="alert alert-dismissible fade show"
+                 style="background: rgba(157,255,108,0.1);
+                        border: 1px solid var(--accent-mint);
+                        border-radius: var(--radius-md);
+                        backdrop-filter: blur(10px);
+                        color: var(--accent-mint);">
+                <i class="fas fa-check-circle"></i> @TempData["Success"]
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        }
+        @if (TempData["Error"] != null)
+        {
+            <div class="alert alert-dismissible fade show"
+                 style="background: rgba(255,122,147,0.1);
+                        border: 1px solid var(--accent-magenta);
+                        border-radius: var(--radius-md);
+                        backdrop-filter: blur(10px);
+                        color: var(--accent-magenta);">
+                <i class="fas fa-exclamation-circle"></i> @TempData["Error"]
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        }
+
+        @RenderBody()
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <script>
+        document.querySelectorAll('.sidebar-signal .nav-link').forEach(function (link) {
+            link.addEventListener('click', function () {
+                document.body.classList.remove('sidebar-open');
+            });
+        });
+    </script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

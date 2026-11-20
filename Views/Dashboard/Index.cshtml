@@ -1,0 +1,226 @@
+<!-- Views/Dashboard/Index.cshtml -->
+@model TradingBot.ViewModels.DashboardViewModel
+@using TradingBot.Models
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 style="font-weight: 700;">📊 Trading Dashboard</h2>
+        <p class="text-muted mb-0">Real-time portfolio overview</p>
+    </div>
+    <div>
+        <span class="badge bg-dark border px-3 py-2"
+              style="border-color: var(--accent-green) !important;">
+            <i class="fas fa-circle positive" style="font-size: 0.6rem;"></i>
+            LIVE
+        </span>
+    </div>
+</div>
+
+<!-- Stats Row -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card">
+            <div class="stat-label">
+                <i class="fas fa-wallet"></i> Total Equity
+            </div>
+            <div class="stat-value" id="totalEquity">
+                $@Model.TotalEquity.ToString("N2")
+            </div>
+            <small class="@(Model.ReturnPercent >= 0 ? "positive" : "negative")">
+                <i class="fas fa-arrow-@(Model.ReturnPercent >= 0 ? "up" : "down")"></i>
+                @Model.ReturnPercent.ToString("F2")% all time
+            </small>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card">
+            <div class="stat-label">
+                <i class="fas fa-chart-pie"></i> Unrealized P&L
+            </div>
+            <div class="stat-value @(Model.UnrealizedPnL >= 0 ? "positive" : "negative")">
+                $@Model.UnrealizedPnL.ToString("N2")
+            </div>
+            <small class="text-muted">@Model.OpenPositions open positions</small>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card">
+            <div class="stat-label">
+                <i class="fas fa-bullseye"></i> Win Rate
+            </div>
+            <div class="stat-value neutral">@Model.WinRate.ToString("F1")%</div>
+            <small class="text-muted">@Model.TotalTrades total trades</small>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card">
+            <div class="stat-label">
+                <i class="fas fa-chess"></i> Active Strategies
+            </div>
+            <div class="stat-value" style="color: var(--accent-blue);">
+                @Model.ActiveStrategies
+            </div>
+            <small class="text-muted">Running automatically</small>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <!-- Equity Chart -->
+    <div class="col-lg-8">
+        <div class="card-trading">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-chart-area"></i> Portfolio Performance</span>
+                <div>
+                    <button class="btn btn-sm btn-outline-secondary"
+                            onclick="updateChart('1W')">1W</button>
+                    <button class="btn btn-sm btn-outline-secondary"
+                            onclick="updateChart('1M')">1M</button>
+                    <button class="btn btn-sm btn-outline-secondary active"
+                            onclick="updateChart('ALL')">ALL</button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="equityChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Market Prices -->
+    <div class="col-lg-4">
+        <div class="card-trading">
+            <div class="card-header">
+                <span><i class="fas fa-coins"></i> Live Markets</span>
+            </div>
+            @foreach (var price in Model.LivePrices)
+            {
+                <div class="d-flex justify-content-between align-items-center
+                            py-2 border-bottom"
+                     style="border-color: var(--border-color) !important;">
+                    <div>
+                        <strong>@price.Key.Replace("USDT", "")</strong>
+                        <br />
+                        <small class="text-muted">/USDT</small>
+                    </div>
+                    <div class="text-end">
+                        <span class="price-live fw-bold">
+                            $@price.Value.ToString("N2")
+                        </span>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- Active Signals -->
+    <div class="col-lg-5">
+        <div class="card-trading">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-signal"></i> Active Signals</span>
+                <span class="badge bg-primary">@Model.ActiveSignals.Count</span>
+            </div>
+            @if (Model.ActiveSignals.Any())
+            {
+                @foreach (var signal in Model.ActiveSignals.Take(8))
+                {
+                    <div class="d-flex justify-content-between align-items-center
+                                py-2 border-bottom"
+                         style="border-color: var(--border-color) !important;">
+                        <div>
+                            <span class="badge-@(signal.Type.ToString().ToLower()
+                                .Contains("buy") ? "buy" : signal.Type.ToString()
+                                .ToLower().Contains("sell") ? "sell" : "hold")">
+                                @signal.Type
+                            </span>
+                            <span class="ms-2 fw-bold">@signal.Symbol</span>
+                            <br />
+                            <small class="text-muted">@signal.Source — @signal.Reason</small>
+                        </div>
+                        <div class="text-end">
+                            <div style="min-width: 80px;">
+                                <small class="text-muted">Confidence</small>
+                                <div class="confidence-bar mt-1">
+                                    <div class="confidence-fill"
+                                         style="width: @signal.Confidence%;
+                                                background: @(signal.Confidence > 70
+                                                    ? "var(--accent-green)"
+                                                    : signal.Confidence > 50
+                                                        ? "var(--accent-gold)"
+                                                        : "var(--accent-red)");">
+                                    </div>
+                                </div>
+                                <small>@signal.Confidence.ToString("F0")%</small>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+            else
+            {
+                <p class="text-muted text-center py-3">No active signals</p>
+            }
+        </div>
+    </div>
+
+    <!-- Recent Trades -->
+    <div class="col-lg-7">
+        <div class="card-trading">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-history"></i> Recent Trades</span>
+                <span class="text-muted small">Last 10 trades</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-trading table-sm">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Type</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>P&L</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var trade in Model.RecentTrades.Take(10))
+                        {
+                            <tr>
+                                <td class="fw-bold">@trade.Symbol</td>
+                                <td>
+                                    <span class="badge-@(trade.Type == TradeType.Buy
+                                        ? "buy" : "sell")">
+                                        @trade.Type
+                                    </span>
+                                </td>
+                                <td>$@trade.EntryPrice.ToString("N2")</td>
+                                <td>
+                                    @(trade.ExitPrice.HasValue
+                                        ? "$" + trade.ExitPrice.Value.ToString("N2")
+                                        : "—")
+                                </td>
+                                <td class="@(trade.ProfitLoss >= 0
+                                    ? "positive" : "negative")">
+                                    @(trade.ProfitLoss.HasValue
+                                        ? "$" + trade.ProfitLoss.Value.ToString("N2")
+                                        : "—")
+                                </td>
+                                <td>
+                                    <small>@trade.Status</small>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/dashboard.js"></script>
+}

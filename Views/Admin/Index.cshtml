@@ -1,0 +1,43 @@
+@model TradingBot.ViewModels.AdminViewModel
+
+@{
+    ViewData["Title"] = "Admin - Kill Switch Controls";
+}
+
+<h2>Admin - Kill Switch Controls</h2>
+
+<div class="admin-panel">
+    <h3>Safety Status</h3>
+    
+    <div class="status-box @(Model.IsKillSwitchActive ? "active" : "inactive")">
+        <p>Kill Switch: <strong>@(Model.IsKillSwitchActive ? "ACTIVE" : "INACTIVE")</strong></p>
+        @if (Model.KillSwitchAt.HasValue)
+        {
+            <p>Activated: @Model.KillSwitchAt.Value.ToString("yyyy-MM-dd HH:mm:ss UTC")</p>
+        }
+        @if (!string.IsNullOrEmpty(Model.KillSwitchReason))
+        {
+            <p>Reason: @Model.KillSwitchReason</p>
+        }
+    </div>
+
+    <h3>Controls</h3>
+
+    <form method="post" asp-action="Activate">
+        <button type="submit" name="reason" value="Manual admin activate" class="btn btn-danger">
+            <i class="fas fa-exclamation-triangle"></i> Activate Kill Switch
+        </button>
+    </form>
+
+    <form method="post" asp-action="Deactivate">
+        <button type="submit" class="btn btn-success">
+            <i class="fas fa-check-circle"></i> Deactivate Kill Switch
+        </button>
+    </form>
+
+    <hr />
+
+    <a asp-controller="Dashboard" asp-action="Index" class="btn btn-link">
+        <i class="fas fa-chart-line"></i> Return to Dashboard
+    </a>
+</div>

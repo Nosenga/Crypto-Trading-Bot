@@ -1,0 +1,169 @@
+/* --- Base Reset & Typography --- */
+html {
+  font-size: 14px;
+  position: relative;
+  min-height: 100%;
+}
+
+@media (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+body {
+  margin-bottom: 60px; /* Preserves your original layout spacing */
+  background-color: #000000; /* Deep black background */
+  color: #f0f0f0; /* Off-white text */
+  font-family: 'Courier New', Courier, monospace; /* Monospace tech feel */
+}
+
+/* --- Standard UI Elements (Buttons, Inputs) --- */
+/* Keeps your existing focus rings but applies the Vista.io accent color */
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
+  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #ff6b4a;
+}
+
+/* Main Action Button - Primary Coral */
+.btn-primary {
+  background-color: #ff6b4a;
+  border-color: #ff6b4a;
+  color: #000000;
+  font-weight: bold;
+  border-radius: 0; /* Sharp, techy corners */
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: all 0.3s ease;
+}
+
+.btn-primary:hover, .btn-primary:active {
+  background-color: #e85a3b;
+  border-color: #e85a3b;
+  color: #000000;
+  transform: translateY(-2px);
+}
+
+/* Secondary button - transparent dark mode */
+.btn-outline-light {
+  border: 1px solid #f0f0f0;
+  color: #f0f0f0;
+  border-radius: 0;
+  text-transform: uppercase;
+}
+
+.btn-outline-light:hover {
+  background-color: #f0f0f0;
+  color: #000000;
+}
+
+/* --- Form Inputs --- */
+.form-control, .form-floating > .form-control {
+  background-color: #222222; /* Dark gray inputs */
+  border: 1px solid #444444;
+  color: #f0f0f0;
+  border-radius: 0;
+}
+
+.form-control:focus {
+  background-color: #1a1a1a;
+  border-color: #ff6b4a;
+  color: #f0f0f0;
+}
+
+.form-floating > .form-control-plaintext::placeholder, 
+.form-floating > .form-control::placeholder {
+  color: #888888;
+  text-align: end;
+}
+
+.form-floating > .form-control-plaintext:focus::placeholder, 
+.form-floating > .form-control:focus::placeholder {
+  text-align: start;
+}
+
+.form-floating > label {
+  color: #aaaaaa;
+}
+
+/* --- Vista.io Specific Layout --- */
+
+/* Navbar Links */
+.navbar-nav .nav-link {
+  color: #f0f0f0 !important;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  letter-spacing: 0.5px;
+  margin: 0 15px;
+}
+
+.navbar-nav .nav-link:hover {
+  color: #ff6b4a !important;
+}
+
+/* Headings (The "New Standard" look) */
+h1, h2, h3, h4, h5 {
+  font-weight: 300;
+  letter-spacing: 0.05em;
+  text-transform: uppercase; /* Gives it the impact seen in the hero */
+}
+
+/* The "Numbers" Section (e.g., 15, 10k, 26M) */
+.stat-number {
+  font-size: 5rem;
+  font-weight: 700;
+  color: #ff6b4a;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+}
+
+.stat-label {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #cccccc;
+}
+
+/* --- Footer --- */
+footer {
+  background-color: #050505;
+  border-top: 1px solid #222222;
+  padding: 40px 0;
+  color: #dddddd;
+}
+
+footer a {
+  color: #dddddd;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+footer a:hover {
+  color: #ff6b4a;
+}
+
+/* --- Utility Section --- */
+/* Dark Card style for Services */
+.card-dark {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid #333333;
+  border-radius: 0;
+  color: #f0f0f0;
+  padding: 2rem;
+  transition: 0.3s;
+}
+
+.card-dark:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: #ff6b4a;
+}
+
+.partner-logo {
+  filter: grayscale(100%) brightness(200%); /* Turns colored logos white */
+  opacity: 0.8;
+  transition: 0.3s;
+}
+
+.partner-logo:hover {
+  filter: grayscale(0%) brightness(100%);
+  opacity: 1;
+}

@@ -1,0 +1,94 @@
+<!-- Views/Strategy/Create.cshtml -->
+@model TradingBot.Models.Strategy
+@{
+    ViewData["Title"] = "Create Strategy";
+}
+
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card-trading">
+            <div class="card-header">
+                <i class="fas fa-plus-circle"></i> Create New Strategy
+            </div>
+            <form asp-action="Create" method="post">
+                <div class="mb-3">
+                    <label class="form-label">Strategy Name</label>
+                    <input asp-for="Name" class="form-control"
+                           placeholder="My Awesome Strategy" required />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <textarea asp-for="Description" class="form-control"
+                              rows="3"
+                              placeholder="Describe your strategy..."></textarea>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-6">
+                        <label class="form-label">Type</label>
+                        <select asp-for="Type" class="form-select"
+                                asp-items="Html.GetEnumSelectList
+                                    <TradingBot.Models.StrategyType>()">
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Symbol</label>
+                        <select asp-for="Symbol" class="form-select">
+                            <option value="BTCUSDT">BTC/USDT</option>
+                            <option value="ETHUSDT">ETH/USDT</option>
+                            <option value="BNBUSDT">BNB/USDT</option>
+                            <option value="SOLUSDT">SOL/USDT</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-4">
+                        <label class="form-label">Stop Loss %</label>
+                        <input asp-for="StopLossPercent" type="number"
+                               class="form-control" step="0.1" value="2" />
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Take Profit %</label>
+                        <input asp-for="TakeProfitPercent" type="number"
+                               class="form-control" step="0.1" value="5" />
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Risk/Trade %</label>
+                        <input asp-for="RiskPerTradePercent" type="number"
+                               class="form-control" step="0.1" value="1" />
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Max Position Size ($)</label>
+                    <input asp-for="MaxPositionSize" type="number"
+                           class="form-control" value="10000" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">
+                        Parameters (JSON)
+                    </label>
+                    <textarea asp-for="Parameters" class="form-control"
+                              rows="3"
+                              placeholder='{"ShortPeriod":20,"LongPeriod":50}'>
+                    </textarea>
+                    <small class="text-muted">
+                        Strategy-specific parameters in JSON format
+                    </small>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-grow-1">
+                        <i class="fas fa-save"></i> Create Strategy
+                    </button>
+                    <a asp-action="Index" class="btn btn-outline-secondary">
+                        Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

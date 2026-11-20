@@ -1,0 +1,36 @@
+@model TradingBot.ViewModels.LoginViewModel
+
+@{
+    ViewData["Title"] = "Login - TradingBot Pro";
+}
+
+<h2>Login</div>
+
+<div class="admin-panel">
+    <h3>Admin Login</h3>
+    
+    <form method="post" asp-controller="Account" asp-action="Login" class="p-4">
+        <div asp-validation-summary="All" class="text-danger mb-3"></div>
+        
+        <div class="mb-3">
+            <label asp-for="Username" class="form-label">Username</label>
+            <input asp-for="Username" class="form-control" required />
+        </div>
+        
+        <div class="mb-3">
+            <label asp-for="Password" class="form-label">Password</label>
+            <input asp-for="Password" class="form-control" type="password" required />
+        </div>
+        
+        <button type="submit" class="btn btn-primary w-100">Sign In</button>
+    </form>
+    
+    <hr />
+    <p class="text-center small">
+        <a asp-controller="Account" asp-action="Login">Forgot password?</a>
+    </p>
+</div>
+
+<footer class="mt-4 small text-center">
+    <p>TradingBot Pro &copy; 2026</p>
+</footer>
