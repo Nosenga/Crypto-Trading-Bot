@@ -114,11 +114,51 @@ namespace TradingBot.Services
             if (trade == null || trade.Status != TradeStatus.Executed)
                 return null;
 
+            // Phase 0: explicit kill-switch policy.
+            // Closes are ALLOWED while the kill switch is active on purpose —
+            // the point of a panic stop is to let the operator flatten positions,
+            // not trap them. Only *opens* are blocked (see ExecuteTradeAsync).
+            // If you ever want closes blocked too, add an explicit forceClose
+            // parameter and gate on it — do NOT change this silently.
+
             // Get current price FROM THE BROKER
             var currentPrice = await _brokerClient.GetCurrentPriceAsync(trade.Symbol);
 
+            // Phase 0: price-0 guard. A network blip must never close a trade at 0.
+            if (currentPrice <= 0)
+            {
+                _logger.LogWarning(
+                    "CloseTradeAsync skipped for #{Id} {Symbol}: invalid price {Price}",
+                    trade.Id, trade.Symbol, currentPrice);
+                return null;
+            }
+
+            // Phase 0: place the closing order BEFORE mutating the DB.
+            // If the broker rejects it, the trade stays open and the DB stays
+            // consistent with the exchange. In Paper mode this returns a fake id;
+            // in Live mode it is the actual sell that frees the position.
+            var closeSide = trade.Type == TradeType.Buy ? "SELL" : "BUY";
+            string? closeOrderId;
+            try
+            {
+                closeOrderId = await _brokerClient.PlaceMarketOrderAsync(
+                    trade.Symbol, closeSide, trade.Quantity);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "CloseTradeAsync failed to place broker order for #{Id} {Symbol}",
+                    trade.Id, trade.Symbol);
+                throw new InvalidOperationException(
+                    $"Broker rejected the close order: {ex.Message}", ex);
+            }
+
             trade.ExitPrice = currentPrice;
             trade.ClosedAt = DateTime.UtcNow;
+            // Phase 0: record the close order id so it can be reconciled later.
+            trade.Notes = string.IsNullOrEmpty(trade.Notes)
+                ? closeOrderId
+                : $"{trade.Notes} | close={closeOrderId}";
 
             // Calculate P&L
             if (trade.Type == TradeType.Buy)
@@ -167,6 +207,12 @@ namespace TradingBot.Services
 
         public async Task<List<Trade>> GetOpenTradesAsync()
         {
+            // Phase 1 TODO: StopLossHit / TakeProfitHit trades are excluded
+            // here (correct — they're no longer open) AND excluded from the
+            // closed count in GetDashboardStatsAsync (which filters Status
+            // == Closed). They currently vanish from both open and closed
+            // stats. Phase 1 adds `Status == Closed || StopLossHit ||
+            // TakeProfitHit` to the closed-trade queries.
             return await _context.Trades
                 .Where(t => t.Status == TradeStatus.Executed)
                 .OrderByDescending(t => t.ExecutedAt)
