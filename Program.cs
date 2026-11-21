@@ -18,6 +18,8 @@ var enableLiveOrders = builder.Configuration.GetValue<bool>("TradingBot:Binance:
 var liveAcknowledged = builder.Configuration.GetValue<bool>("TradingBot:Safety:LiveTradingAcknowledged");
 var refuseIfNotAcknowledged = builder.Configuration.GetValue<bool>("TradingBot:Safety:RefuseLiveIfNotAcknowledged", true);
 
+builder.Services.AddSingleton<IPriceFeed, BinancePriceFeed>();
+
 // --- 2a. STARTUP SAFETY GUARD ---
 // Refuse to start in Live mode with live orders enabled unless the operator
 // has explicitly acknowledged the risk in config. This is the third gate:
