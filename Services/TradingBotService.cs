@@ -52,6 +52,10 @@ namespace TradingBot.Services
                 throw new InvalidOperationException(
                     "Sell is exit-only (long-only spot). Use CloseTradeAsync to exit a long.");
 
+            quantity = await _brokerClient.NormalizeQuantityAsync(symbol, quantity);
+            if (quantity <= 0)
+                throw new InvalidOperationException(
+                    $"Quantity too small after rounding for {symbol}.");
 
             // 1. Get price FROM THE BROKER instead of MarketDataService
             var currentPrice = await _brokerClient.GetCurrentPriceAsync(symbol);

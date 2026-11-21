@@ -7,6 +7,9 @@ namespace TradingBot.Core.Interfaces
 {
     public interface IBrokerClient
     {
+        Task InitializeAsync(IEnumerable<string> symbols);
+        Task<decimal> NormalizeQuantityAsync(string symbol, decimal quantity);
+
         // 1. Live Data
         Task<decimal> GetCurrentPriceAsync(string symbol);
         Task<List<MarketData>> GetHistoricalCandlesAsync(string symbol, DateTime from, DateTime to, string timeframe = "1h");

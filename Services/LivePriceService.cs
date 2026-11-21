@@ -1,6 +1,7 @@
 // Services/LivePriceService.cs
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Hosting;  // ← THIS is what brings in BackgroundService
+using TradingBot.Core.Interfaces;
 using TradingBot.Hubs;
 
 namespace TradingBot.Services
@@ -35,6 +36,13 @@ namespace TradingBot.Services
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("LivePriceService started.");
+            using (var initScope = _serviceProvider.CreateScope())
+            {
+                var broker = initScope.ServiceProvider
+                    .GetRequiredService<IBrokerClient>();
+                await broker.InitializeAsync(_symbols);
+            }
+
             var tick = 0;
 
             while (!stoppingToken.IsCancellationRequested)

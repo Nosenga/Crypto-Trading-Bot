@@ -17,6 +17,9 @@ public class BinanceBroker : IBrokerClient
     private readonly string _apiSecret;
     private readonly bool _enableLiveOrders;
     private readonly ISafetyService _safety;
+    private readonly IPriceFeed _priceFeed;
+    private readonly ConcurrentDictionary<string, (decimal StepSize, decimal MinNotional)> _filters =
+        new(StringComparer.OrdinalIgnoreCase);
 
     // Binance requires the symbol when cancelling or querying a Spot order.
     // This mapping is only retained while the application is running.
@@ -29,10 +32,12 @@ public class BinanceBroker : IBrokerClient
     public BinanceBroker(
         ILogger<BinanceBroker> logger,
         IConfiguration configuration,
-        ISafetyService safety)
+        ISafetyService safety,
+        IPriceFeed priceFeed)
     {
         _logger = logger;
         _safety = safety;
+        _priceFeed = priceFeed;
 
         _apiKey = configuration["TradingBot:Binance:ApiKey"]
             ?? throw new InvalidOperationException(
@@ -52,6 +57,62 @@ public class BinanceBroker : IBrokerClient
         {
             ApiCredentials = new BinanceApiCredentials(_apiKey, _apiSecret)
         });
+    }
+
+    public async Task RefreshFiltersAsync(IEnumerable<string> symbols)
+    {
+        var refreshedFilters = await _priceFeed.GetExchangeFiltersAsync(symbols);
+        foreach (var filter in refreshedFilters)
+            _filters[filter.Key] = filter.Value;
+    }
+
+    public Task InitializeAsync(IEnumerable<string> symbols) =>
+        RefreshFiltersAsync(symbols);
+
+    public async Task<decimal> NormalizeQuantityAsync(
+        string symbol, decimal quantity)
+    {
+        if (quantity <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(quantity), "Order quantity must be greater than zero.");
+
+        await EnsureFiltersLoadedAsync(symbol);
+        return RoundQuantity(symbol, quantity);
+    }
+
+    private async Task EnsureFiltersLoadedAsync(string symbol)
+    {
+        if (!_filters.ContainsKey(symbol))
+            await RefreshFiltersAsync(new[] { symbol });
+    }
+
+    private decimal RoundQuantity(string symbol, decimal quantity)
+    {
+        if (!_filters.TryGetValue(symbol, out var filter))
+            throw new InvalidOperationException(
+                $"Exchange filters for {symbol} have not been loaded.");
+
+        if (filter.StepSize <= 0)
+            throw new InvalidOperationException(
+                $"Exchange filter for {symbol} has an invalid step size.");
+
+        var steps = Math.Floor(quantity / filter.StepSize);
+        return steps * filter.StepSize;
+    }
+
+    private void ValidateNotional(string symbol, decimal quantity, decimal price)
+    {
+        if (!_filters.TryGetValue(symbol, out var filter))
+            throw new InvalidOperationException(
+                $"Exchange filters for {symbol} have not been loaded.");
+
+        var notional = quantity * price;
+        if (notional < filter.MinNotional)
+        {
+            throw new InvalidOperationException(
+                $"Order notional (${notional:F2}) is below the minimum required " +
+                $"(${filter.MinNotional}) for {symbol}.");
+        }
     }
 
     public async Task<decimal> GetCurrentPriceAsync(string symbol)
@@ -154,18 +215,28 @@ public class BinanceBroker : IBrokerClient
 
         var orderSide = ParseOrderSide(side);
 
+        await EnsureFiltersLoadedAsync(symbol);
+        var roundedQuantity = RoundQuantity(symbol, quantity);
+        if (allowWhenKillSwitchActive && roundedQuantity != quantity)
+            throw new InvalidOperationException(
+                $"Order quantity for {symbol} is not aligned with the exchange step size; " +
+                $"rounded-down quantity would be {roundedQuantity}.");
+        quantity = roundedQuantity;
+        if (quantity <= 0)
+            throw new InvalidOperationException(
+                $"Quantity too small after rounding for {symbol}.");
+
+        var currentPrice = await GetCurrentPriceAsync(symbol);
+        if (currentPrice <= 0)
+            throw new InvalidOperationException(
+                $"Could not determine a valid current price for {symbol}.");
+
+        ValidateNotional(symbol, quantity, currentPrice);
+
         // Optional pre-check for BUY orders on USDT pairs.
         // Binance still performs the authoritative balance and trade-rule checks.
         if (orderSide == OrderSide.Buy && symbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase))
         {
-            var currentPrice = await GetCurrentPriceAsync(symbol);
-
-            if (currentPrice <= 0)
-            {
-                throw new InvalidOperationException(
-                    $"Could not determine a valid current price for {symbol}.");
-            }
-
             var estimatedCost = quantity * currentPrice;
             var availableUsdt = await GetAvailableBalanceAsync("USDT");
 
@@ -241,6 +312,14 @@ public class BinanceBroker : IBrokerClient
                 "Limit price must be greater than zero.");
 
         var orderSide = ParseOrderSide(side);
+
+        await EnsureFiltersLoadedAsync(symbol);
+        quantity = RoundQuantity(symbol, quantity);
+        if (quantity <= 0)
+            throw new InvalidOperationException(
+                $"Quantity too small after rounding for {symbol}.");
+
+        ValidateNotional(symbol, quantity, price);
 
         // Optional pre-check for BUY orders on USDT pairs.
         if (orderSide == OrderSide.Buy && symbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase))
