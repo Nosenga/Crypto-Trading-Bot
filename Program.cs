@@ -55,7 +55,7 @@ if (tradingMode.Equals("Live", StringComparison.OrdinalIgnoreCase) && enableLive
 // --- 3. REGISTER BROKER ---
 if (tradingMode.Equals("Live", StringComparison.OrdinalIgnoreCase))
 {
-    builder.Services.AddScoped<IBrokerClient, BinanceBroker>();
+    builder.Services.AddSingleton<IBrokerClient, BinanceBroker>();
     builder.Services.AddScoped<IMarketDataService, MarketDataService>();
 
     Console.WriteLine("=========================================");
@@ -68,7 +68,7 @@ if (tradingMode.Equals("Live", StringComparison.OrdinalIgnoreCase))
 }
 else
 {
-    builder.Services.AddScoped<IBrokerClient, PaperBroker>();
+    builder.Services.AddSingleton<IBrokerClient, PaperBroker>();
     builder.Services.AddScoped<IMarketDataService, MarketDataService>();
 
     Console.WriteLine("=========================================");

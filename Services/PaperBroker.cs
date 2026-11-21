@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using TradingBot.Core.Interfaces;
 using TradingBot.Models;
 
@@ -7,6 +8,8 @@ namespace TradingBot.Services
     {
         private readonly ISafetyService _safety;
         private readonly IPriceFeed _priceFeed;
+        private readonly ConcurrentDictionary<string, (decimal StepSize, decimal MinNotional)> _filters =
+            new(StringComparer.OrdinalIgnoreCase);
 
         public PaperBroker(ISafetyService safety, IPriceFeed priceFeed)
         {
@@ -21,6 +24,62 @@ namespace TradingBot.Services
         public Task<decimal> GetCurrentPriceAsync(string symbol) =>
             _priceFeed.GetCurrentPriceAsync(symbol);
 
+        public async Task RefreshFiltersAsync(IEnumerable<string> symbols)
+        {
+            var refreshedFilters = await _priceFeed.GetExchangeFiltersAsync(symbols);
+            foreach (var filter in refreshedFilters)
+                _filters[filter.Key] = filter.Value;
+        }
+
+        public Task InitializeAsync(IEnumerable<string> symbols) =>
+            RefreshFiltersAsync(symbols);
+
+        public async Task<decimal> NormalizeQuantityAsync(
+            string symbol, decimal quantity)
+        {
+            if (quantity <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(quantity), "Order quantity must be greater than zero.");
+
+            await EnsureFiltersLoadedAsync(symbol);
+            return RoundQuantity(symbol, quantity);
+        }
+
+        private async Task EnsureFiltersLoadedAsync(string symbol)
+        {
+            if (!_filters.ContainsKey(symbol))
+                await RefreshFiltersAsync(new[] { symbol });
+        }
+
+        private decimal RoundQuantity(string symbol, decimal quantity)
+        {
+            if (!_filters.TryGetValue(symbol, out var filter))
+                throw new InvalidOperationException(
+                    $"Exchange filters for {symbol} have not been loaded.");
+
+            if (filter.StepSize <= 0)
+                throw new InvalidOperationException(
+                    $"Exchange filter for {symbol} has an invalid step size.");
+
+            var steps = Math.Floor(quantity / filter.StepSize);
+            return steps * filter.StepSize;
+        }
+
+        private void ValidateNotional(string symbol, decimal quantity, decimal price)
+        {
+            if (!_filters.TryGetValue(symbol, out var filter))
+                throw new InvalidOperationException(
+                    $"Exchange filters for {symbol} have not been loaded.");
+
+            var notional = quantity * price;
+            if (notional < filter.MinNotional)
+            {
+                throw new InvalidOperationException(
+                    $"Order notional (${notional:F2}) is below the minimum required " +
+                    $"(${filter.MinNotional}) for {symbol}.");
+            }
+        }
+
         public Task<List<MarketData>> GetHistoricalCandlesAsync(
             string symbol, DateTime from, DateTime to, string timeframe = "1h")
         {
@@ -34,32 +93,85 @@ namespace TradingBot.Services
             return Task.FromResult(_paperBalance);
         }
 
-        public Task<string> PlaceMarketOrderAsync(string symbol, string side, decimal quantity)
+        public async Task<string> PlaceMarketOrderAsync(
+            string symbol, string side, decimal quantity)
         {
             if (_safety.IsKillSwitchActive)
                 throw new InvalidOperationException(
                     $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
 
+            if (quantity <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(quantity), "Order quantity must be greater than zero.");
+
+            await EnsureFiltersLoadedAsync(symbol);
+            quantity = RoundQuantity(symbol, quantity);
+            if (quantity <= 0)
+                throw new InvalidOperationException(
+                    $"Quantity too small after rounding for {symbol}.");
+
+            var price = await GetCurrentPriceAsync(symbol);
+            if (price <= 0)
+                throw new InvalidOperationException(
+                    $"Could not determine a valid current price for {symbol}.");
+
+            ValidateNotional(symbol, quantity, price);
+
             var orderId = Guid.NewGuid().ToString();
-            return Task.FromResult(orderId);
+            return orderId;
         }
 
-        public Task<string> PlaceClosingMarketOrderAsync(
+        public async Task<string> PlaceClosingMarketOrderAsync(
             string symbol, string side, decimal quantity)
         {
+            if (quantity <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(quantity), "Order quantity must be greater than zero.");
+
+            await EnsureFiltersLoadedAsync(symbol);
+            var roundedQuantity = RoundQuantity(symbol, quantity);
+            if (roundedQuantity != quantity)
+                throw new InvalidOperationException(
+                    $"Order quantity for {symbol} is not aligned with the exchange step size; " +
+                    $"rounded-down quantity would be {roundedQuantity}.");
+            quantity = roundedQuantity;
+
+            var price = await GetCurrentPriceAsync(symbol);
+            if (price <= 0)
+                throw new InvalidOperationException(
+                    $"Could not determine a valid current price for {symbol}.");
+
+            ValidateNotional(symbol, quantity, price);
+
             var orderId = Guid.NewGuid().ToString();
-            return Task.FromResult(orderId);
+            return orderId;
         }
 
-        public Task<string> PlaceLimitOrderAsync(
+        public async Task<string> PlaceLimitOrderAsync(
             string symbol, string side, decimal quantity, decimal price)
         {
             if (_safety.IsKillSwitchActive)
                 throw new InvalidOperationException(
                     $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
 
+            if (quantity <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(quantity), "Order quantity must be greater than zero.");
+
+            if (price <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(price), "Limit price must be greater than zero.");
+
+            await EnsureFiltersLoadedAsync(symbol);
+            quantity = RoundQuantity(symbol, quantity);
+            if (quantity <= 0)
+                throw new InvalidOperationException(
+                    $"Quantity too small after rounding for {symbol}.");
+
+            ValidateNotional(symbol, quantity, price);
+
             var orderId = Guid.NewGuid().ToString();
-            return Task.FromResult(orderId);
+            return orderId;
         }
 
         public Task<bool> CancelOrderAsync(string orderId)

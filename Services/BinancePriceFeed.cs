@@ -1,5 +1,6 @@
 using Binance.Net.Clients;
 using Binance.Net.Enums;
+using Binance.Net.Objects.Models.Spot;
 using TradingBot.Core.Interfaces;
 using TradingBot.Models;
 
@@ -122,6 +123,58 @@ namespace TradingBot.Services
                 _logger.LogError(ex, "Failed to retrieve klines for {Symbol}", symbol);
                 return new List<MarketData>();
             }
+        }
+
+        public async Task<Dictionary<string, (decimal StepSize, decimal MinNotional)>> GetExchangeFiltersAsync(IEnumerable<string> symbols)
+        {
+            var filters = new Dictionary<string, (decimal, decimal)>(StringComparer.OrdinalIgnoreCase);
+            var symbolList = symbols.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            using var client = new BinanceClient();
+            var result = await client.SpotApi.ExchangeData.GetExchangeInfoAsync();
+
+            if (!result.Success)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to fetch Binance exchange filters: {result.Error?.Message}");
+            }
+
+            foreach (var symbolInfo in result.Data.Symbols.Where(s => symbolList.Contains(s.Name)))
+            {
+                var lotSizeFilter = symbolInfo.Filters
+                    .OfType<BinanceSymbolLotSizeFilter>()
+                    .FirstOrDefault();
+                var notionalFilter = symbolInfo.Filters
+                    .OfType<BinanceSymbolNotionalFilter>()
+                    .FirstOrDefault();
+                var minNotionalFilter = symbolInfo.Filters
+                    .OfType<BinanceSymbolMinNotionalFilter>()
+                    .FirstOrDefault();
+                var minNotional = notionalFilter?.MinNotional
+                    ?? minNotionalFilter?.MinNotional;
+
+                if (lotSizeFilter == null ||
+                    lotSizeFilter.StepSize <= 0 ||
+                    minNotional == null ||
+                    minNotional <= 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Binance exchange filters are incomplete for {symbolInfo.Name}.");
+                }
+
+                filters[symbolInfo.Name] = (lotSizeFilter.StepSize, minNotional.Value);
+            }
+
+            var missingSymbols = symbolList
+                .Where(symbol => !filters.ContainsKey(symbol))
+                .ToArray();
+            if (missingSymbols.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Binance exchange filters were not returned for: {string.Join(", ", missingSymbols)}.");
+            }
+
+            return filters;
         }
     }
 }
