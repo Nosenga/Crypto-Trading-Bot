@@ -11,7 +11,7 @@ namespace TradingBot.Services
         private readonly AppDbContext _context;
         private readonly ILogger<MarketDataService> _logger;
         private readonly Random _random = new();
-        private readonly IBrokerClient _brokerClient;
+        private readonly IPriceFeed _priceFeed;
 
         // Simulated real-time prices
         private static readonly Dictionary<string, decimal> _livePrices = new()
@@ -26,9 +26,12 @@ namespace TradingBot.Services
             ["DOGEUSDT"] = 0.085m
         };
 
-        public MarketDataService(AppDbContext context, ILogger<MarketDataService> logger, IBrokerClient brokerClient)
+        public MarketDataService(
+            AppDbContext context,
+            ILogger<MarketDataService> logger,
+            IPriceFeed priceFeed)
         {
-            _brokerClient = brokerClient;
+            _priceFeed = priceFeed;
             _context = context;
             _logger = logger;
         }
@@ -104,15 +107,7 @@ namespace TradingBot.Services
         public async Task<Dictionary<string, decimal>> GetPriceUpdatesAsync(
             List<string> symbols)
         {
-            var prices = new Dictionary<string, decimal>();
-
-            foreach (var symbol in symbols)
-            {
-               var price = await _brokerClient.GetCurrentPriceAsync(symbol);
-               prices[symbol] = price;
-            }
-
-            return prices;
+            return await _priceFeed.GetTickersAsync(symbols);
         }
 
         public async Task<List<MarketData>> CalculateIndicatorsAsync(
