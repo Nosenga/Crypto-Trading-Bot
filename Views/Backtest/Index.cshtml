@@ -1,289 +1,68 @@
 <!-- Views/Backtest/Index.cshtml -->
 @model TradingBot.ViewModels.BacktestViewModel
+@using TradingBot.Models
 @{
     ViewData["Title"] = "Backtest";
 }
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h2 style="font-weight: 700;">🧪 Strategy Backtester</h2>
-        <p class="text-muted mb-0">
-            Test strategies against historical data
-        </p>
-    </div>
-</div>
-
-<div class="row g-3 mb-4">
+<div class="grid">
     <!-- Backtest Form -->
-    <div class="col-lg-4">
-        <div class="card-trading">
-            <div class="card-header">
-                <i class="fas fa-play-circle"></i> Run Backtest
-            </div>
+    <div class="p">
+        <header>
+            <h3>Run Backtest</h3>
+        </header>
+        <div class="bd">
             <form asp-action="Run" method="post">
-                <div class="mb-3">
-                    <label class="form-label">Strategy</label>
-                    <select asp-for="StrategyId" class="form-select" required>
-                        <option value="">Select strategy...</option>
-                        @foreach (var s in Model.Strategies)
-                        {
-                            <option value="@s.Id">
-                                @s.Name (@s.Type — @s.Symbol)
-                            </option>
-                        }
-                    </select>
+                <label>Strategy</label>
+                <select asp-for="StrategyId">
+                    <option value="">Select strategy...</option>
+                    @foreach (var s in Model.Strategies)
+                    {
+                        <option value="@s.Id">@s.Name (@s.Type — @s.Symbol)</option>
+                    }
+                </select>
+
+                <div class="sum">
+                    <dt>Start Date</dt>
+                    <dd><input asp-for="StartDate" type="date" /></dd>
+                    <dt>End Date</dt>
+                    <dd><input asp-for="EndDate" type="date" /></dd>
+                    <dt>Initial Capital ($)</dt>
+                    <dd><input asp-for="InitialCapital" type="number" /></dd>
                 </div>
 
-                <div class="row g-2 mb-3">
-                    <div class="col-6">
-                        <label class="form-label">Start Date</label>
-                        <input asp-for="StartDate" type="date"
-                               class="form-control" />
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label">End Date</label>
-                        <input asp-for="EndDate" type="date"
-                               class="form-control" />
-                    </div>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Initial Capital ($)</label>
-                    <input asp-for="InitialCapital" type="number"
-                           class="form-control" />
-                </div>
-
-                <button type="submit"
-                        class="btn btn-primary w-100 py-2">
+                <button type="submit" class="go">
                     <i class="fas fa-flask"></i> Run Backtest
                 </button>
             </form>
         </div>
+    </div>
 
-        <!-- Backtest History -->
-        <div class="card-trading">
-            <div class="card-header">
-                <i class="fas fa-history"></i> Previous Tests
-            </div>
-            @foreach (var bt in Model.History.Take(10))
+    <!-- Previous Tests -->
+    <div class="p p-pos">
+        <header>
+            <h3>Previous Tests</h3>
+            <span class="mu">@Model.History.Count</span>
+        </header>
+        <div class="bd">
+            @if (Model.History.Any())
             {
-                <a href="@Url.Action("Results", new { id = bt.Id })"
-                   class="d-flex justify-content-between align-items-center
-                          py-2 border-bottom text-decoration-none"
-                   style="border-color: var(--border-color) !important;
-                          color: var(--text-primary);">
-                    <div>
-                        <strong>@bt.StrategyName</strong>
-                        <br />
-                        <small class="text-muted">
-                            @bt.StartDate.ToString("MM/dd") —
-                            @bt.EndDate.ToString("MM/dd")
-                        </small>
-                    </div>
-                    <span class="@(bt.TotalReturnPercent >= 0
-                        ? "positive" : "negative") fw-bold">
-                        @bt.TotalReturnPercent.ToString("F2")%
-                    </span>
-                </a>
+                @foreach (var bt in Model.History.Take(10))
+                {
+                    <a asp-action="Results" route-id="@bt.Id" class="p">
+                        <div>
+                            <strong>@bt.StrategyName</strong>
+                            <br />
+                            <small class="mu">@bt.StartDate.ToString("MM/dd") — @bt.EndDate.ToString("MM/dd")</small>
+                        </div>
+                        <span class="@(bt.TotalReturnPercent >= 0 ? "up" : "dn") fw-bold">@bt.TotalReturnPercent.ToString("F2")%</span>
+                    </a>
+                }
             }
-            @if (!Model.History.Any())
+            else
             {
-                <p class="text-muted text-center py-3">
-                    No backtests yet
-                </p>
+                <div class="mu text-center py-3">No backtest history</div>
             }
         </div>
     </div>
-
-    <!-- Results Area -->
-    <div class="col-lg-8">
-        @if (Model.Result != null)
-        {
-            <!-- Summary Stats -->
-            <div class="row g-3 mb-3">
-                <div class="col-md-3">
-                    <div class="stat-card text-center">
-                        <div class="stat-label">Total Return</div>
-                        <div class="stat-value @(Model.Result.TotalReturnPercent >= 0
-                            ? "positive" : "negative")">
-                            @Model.Result.TotalReturnPercent%
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="stat-card text-center">
-                        <div class="stat-label">Sharpe Ratio</div>
-                        <div class="stat-value">@Model.Result.SharpeRatio</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="stat-card text-center">
-                        <div class="stat-label">Win Rate</div>
-                        <div class="stat-value neutral">
-                            @Model.Result.WinRate%
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="stat-card text-center">
-                        <div class="stat-label">Max Drawdown</div>
-                        <div class="stat-value negative">
-                            -@Model.Result.MaxDrawdownPercent%
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Equity Curve -->
-            <div class="card-trading mb-3">
-                <div class="card-header">
-                    <span>
-                        <i class="fas fa-chart-line"></i> Equity Curve
-                    </span>
-                    <span class="@(Model.Result.TotalReturnPercent >= 0
-                        ? "positive" : "negative")">
-                        $@Model.Result.InitialCapital →
-                        $@Model.Result.FinalCapital
-                    </span>
-                </div>
-                <div class="chart-container">
-                    <canvas id="equityCurveChart"></canvas>
-                </div>
-            </div>
-
-            <!-- Detailed Stats -->
-            <div class="card-trading">
-                <div class="card-header">
-                    <i class="fas fa-table"></i> Detailed Results
-                </div>
-                <div class="row g-2">
-                    <div class="col-md-6">
-                        <table class="table table-trading table-sm">
-                            <tr>
-                                <td class="text-muted">Initial Capital</td>
-                                <td class="text-end fw-bold">
-                                    $@Model.Result.InitialCapital.ToString("N2")
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">Final Capital</td>
-                                <td class="text-end fw-bold">
-                                    $@Model.Result.FinalCapital.ToString("N2")
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">Total Return</td>
-                                <td class="text-end fw-bold
-                                    @(Model.Result.TotalReturn >= 0
-                                        ? "positive" : "negative")">
-                                    $@Model.Result.TotalReturn.ToString("N2")
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">Annualized Return</td>
-                                <td class="text-end">
-                                    @Model.Result.AnnualizedReturn%
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
-                    <div class="col-md-6">
-                        <table class="table table-trading table-sm">
-                            <tr>
-                                <td class="text-muted">Total Trades</td>
-                                <td class="text-end fw-bold">
-                                    @Model.Result.TotalTrades
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">Winning / Losing</td>
-                                <td class="text-end">
-                                    <span class="positive">
-                                        @Model.Result.WinningTrades
-                                    </span> /
-                                    <span class="negative">
-                                        @Model.Result.LosingTrades
-                                    </span>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">Largest Win</td>
-                                <td class="text-end positive">
-                                    $@Model.Result.LargestWin.ToString("N2")
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">Largest Loss</td>
-                                <td class="text-end negative">
-                                    $@Model.Result.LargestLoss.ToString("N2")
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        }
-        else
-        {
-            <div class="card-trading text-center py-5">
-                <i class="fas fa-flask fa-3x mb-3"
-                   style="color: var(--accent-blue);"></i>
-                <h4>Ready to Backtest</h4>
-                <p class="text-muted">
-                    Select a strategy and date range, then run the backtest
-                    to see results.
-                </p>
-            </div>
-        }
-    </div>
 </div>
-
-@section Scripts {
-    @if (Model.Result?.EquityCurveJson != null)
-    {
-        <script>
-            const equityData = @Html.Raw(Model.Result.EquityCurveJson);
-            const ctx = document.getElementById('equityCurveChart');
-
-            if (ctx) {
-                new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: equityData.map((_, i) => i),
-                        datasets: [{
-                            label: 'Equity',
-                            data: equityData,
-                            borderColor: '#5ce1ff',
-                            backgroundColor: 'rgba(92,225,255,0.14)',
-                            fill: true,
-                            tension: 0.3,
-                            pointRadius: 0,
-                            borderWidth: 2
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false }
-                        },
-                        scales: {
-                            x: {
-                                display: true,
-                                grid: { color: 'rgba(255,255,255,0.08)' },
-                                ticks: { color: '#8fb2c7' }
-                            },
-                            y: {
-                                grid: { color: 'rgba(255,255,255,0.08)' },
-                                ticks: {
-                                    color: '#8fb2c7',
-                                    callback: v => '$' + v.toLocaleString()
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-        </script>
-    }
-}

@@ -1,34 +1,5 @@
 // wwwroot/js/dashboard.js
 document.addEventListener('DOMContentLoaded', function () {
-    // SignalR Connection
-    const connection = new signalR.HubConnectionBuilder()
-        .withUrl('/tradingHub')
-        .withAutomaticReconnect()
-        .build();
-
-    connection.start()
-        .then(() => console.log('SignalR connected'))
-        .catch(err => console.error('SignalR error:', err));
-
-    // Listen for market updates
-    connection.on('MarketUpdate', function (prices) {
-        Object.keys(prices).forEach(symbol => {
-            const priceElements = document.querySelectorAll(
-                `[data-symbol="${symbol}"]`
-            );
-            priceElements.forEach(el => {
-                el.textContent = '$' + parseFloat(prices[symbol])
-                    .toLocaleString('en-US', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                    });
-            });
-        });
-
-        document.getElementById('lastUpdate').textContent =
-            'Last update: ' + new Date().toLocaleTimeString();
-    });
-
     // Portfolio chart
     initEquityChart();
 });

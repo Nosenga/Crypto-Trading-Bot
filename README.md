@@ -62,6 +62,10 @@ Initialize user-secrets only once per project. The password hash is kept out of 
   "MaxOpenPositions": 10,
   "MaxPositionSize": 500, // Hard cap on position value per trade
   "RiskPerTradePercent": 1.0,
+  "RiskManagement": {
+    "DailyLossLimitPercent": 3.0,
+    "MaxDrawdownLimitPercent": 10.0
+  },
   "DefaultStopLossPercent": 2.0,
   "DefaultTakeProfitPercent": 5.0,
   "Binance": {
