@@ -31,6 +31,8 @@ namespace TradingBot.Services
                     : new BinanceApiCredentials(_apiKey, _apiSecret),
                 SpotApiOptions = new BinanceApiClientOptions
                 {
+                    AutoTimestamp = true,
+                    // BaseAddress = "https://api.binance.com"
                     BaseAddress = "https://testnet.binance.vision"
                 }
             });

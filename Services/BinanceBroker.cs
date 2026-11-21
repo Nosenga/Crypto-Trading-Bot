@@ -61,6 +61,7 @@ public class BinanceBroker : IBrokerClient
             ApiCredentials = new BinanceApiCredentials(_apiKey, _apiSecret),
             SpotApiOptions = new BinanceApiClientOptions
             {
+                AutoTimestamp = true,
                 // BaseAddress = "https://api.binance.com",
                 BaseAddress = "https://testnet.binance.vision", // For testing on Binance Spot Testnet
             }
