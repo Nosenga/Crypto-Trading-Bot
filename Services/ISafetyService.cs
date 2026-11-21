@@ -1,3 +1,5 @@
+using TradingBot.Models;
+
 namespace TradingBot.Services
 {
     /// <summary>
@@ -7,10 +9,14 @@ namespace TradingBot.Services
     /// </summary>
     public interface ISafetyService
     {
+        bool IsArmed { get; set; }
         bool IsKillSwitchActive { get; }
         DateTime? KillSwitchAt { get; }
         string? KillSwitchReason { get; }
+        void ArmTrading();
+        void DisarmTrading();
         void ActivateKillSwitch(string reason);
         void DeactivateKillSwitch();
+        void UpdateHighWaterMark(Portfolio portfolio);
     }
 }

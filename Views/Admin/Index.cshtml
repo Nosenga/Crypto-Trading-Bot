@@ -10,7 +10,18 @@
     <h3>Safety Status</h3>
     
     <div class="status-box @(Model.IsKillSwitchActive ? "active" : "inactive")">
+        <p>Trading: <strong>@(Model.IsArmed ? "ARMED" : "DISARMED — SHADOW MODE")</strong></p>
         <p>Kill Switch: <strong>@(Model.IsKillSwitchActive ? "ACTIVE" : "INACTIVE")</strong></p>
+        <p>High Water Mark: <strong>$@Model.HighWaterMark.ToString("N2")</strong></p>
+        <p>
+            Daily Loss Limit (@Model.DailyLossLimitPercent.ToString("N1")%):
+            <strong>@(Model.IsDailyLossLimitBreached ? "HIT" : "WITHIN LIMIT")</strong>
+        </p>
+        <p>
+            Today's start balance: $@Model.StartOfDayBalance.ToString("N2") |
+            Current balance: $@Model.CurrentBalance.ToString("N2") |
+            Daily loss: @Model.DailyLossPercent.ToString("N2")%
+        </p>
         @if (Model.KillSwitchAt.HasValue)
         {
             <p>Activated: @Model.KillSwitchAt.Value.ToString("yyyy-MM-dd HH:mm:ss UTC")</p>
@@ -22,6 +33,18 @@
     </div>
 
     <h3>Controls</h3>
+
+    <form method="post" asp-action="Arm">
+        <button type="submit" class="btn btn-success">
+            <i class="fas fa-play"></i> Arm Trading
+        </button>
+    </form>
+
+    <form method="post" asp-action="Disarm">
+        <button type="submit" class="btn btn-secondary">
+            <i class="fas fa-pause"></i> Disarm Trading
+        </button>
+    </form>
 
     <form method="post" asp-action="Activate">
         <button type="submit" name="reason" value="Manual admin activate" class="btn btn-danger">
