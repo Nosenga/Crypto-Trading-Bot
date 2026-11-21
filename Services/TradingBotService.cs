@@ -8,6 +8,8 @@ namespace TradingBot.Services
 {
     public class TradingBotService : ITradingBotService
     {
+        private const string ShadowModeTradeMarker = "SHADOW_MODE";
+
         private readonly AppDbContext _context;
         private readonly IMarketDataService _marketDataService;
         private readonly IBrokerClient _brokerClient; // <--- ADDED
@@ -53,6 +55,13 @@ namespace TradingBot.Services
                 throw new InvalidOperationException(
                     "Sell is exit-only (long-only spot). Use CloseTradeAsync to exit a long.");
 
+            await UpdatePortfolioAsync();
+            if (_safety.IsKillSwitchActive)
+            {
+                throw new InvalidOperationException(
+                    $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
+            }
+
             quantity = await _brokerClient.NormalizeQuantityAsync(symbol, quantity);
             if (quantity <= 0)
                 throw new InvalidOperationException(
@@ -91,21 +100,33 @@ namespace TradingBot.Services
                     "Insufficient balance (including fees)");
             }
 
-            // 2. Send the order to the Broker
-            string side = type == TradeType.Buy ? "BUY" : "SELL";
+            // 2. Send the order only when the operator has armed trading.
             string? brokerOrderId = null;
-            try
+            var isShadowTrade = !_safety.IsArmed;
+            if (isShadowTrade)
             {
-                // Purely optional: this lets the "PaperBroker" generate a fake ID
-                brokerOrderId = await _brokerClient.PlaceMarketOrderAsync(symbol, side, quantity);
+                brokerOrderId = ShadowModeTradeMarker;
+                _logger.LogInformation(
+                    "[Shadow Mode] Would have bought {Quantity} {Symbol}",
+                    quantity, symbol);
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogError(ex, "Broker rejected the order for {Symbol}", symbol);
-                throw new InvalidOperationException($"Broker rejected the order: {ex.Message}");
+                try
+                {
+                    brokerOrderId = await _brokerClient.PlaceMarketOrderAsync(
+                        symbol, "BUY", quantity);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Broker rejected the order for {Symbol}", symbol);
+                    throw new InvalidOperationException(
+                        $"Broker rejected the order: {ex.Message}");
+                }
             }
 
-            // 3. Only save to the DB if the Broker accepted the order
+            // In shadow mode, persist a simulated position without placing a
+            // broker order. The marker also keeps its later close simulated.
             var trade = new Trade
             {
                 Symbol = symbol,
@@ -132,7 +153,7 @@ namespace TradingBot.Services
             _context.Trades.Add(trade);
             await _context.SaveChangesAsync();
 
-            if (stopLoss is > 0 && takeProfit is > 0)
+            if (!isShadowTrade && stopLoss is > 0 && takeProfit is > 0)
             {
                 try
                 {
@@ -232,24 +253,32 @@ namespace TradingBot.Services
                 return null;
             }
 
-            // Phase 0: place the closing order BEFORE mutating the DB.
-            // If the broker rejects it, the trade stays open and the DB stays
-            // consistent with the exchange. In Paper mode this returns a fake id;
-            // in Live mode it is the actual sell that frees the position.
             var closeSide = trade.Type == TradeType.Buy ? "SELL" : "BUY";
             string? closeOrderId;
-            try
+            var isShadowTrade = trade.Notes?.StartsWith(
+                ShadowModeTradeMarker, StringComparison.Ordinal) == true;
+            if (isShadowTrade)
             {
-                closeOrderId = await _brokerClient.PlaceClosingMarketOrderAsync(
-                    trade.Symbol, closeSide, trade.Quantity);
+                closeOrderId = ShadowModeTradeMarker;
+                _logger.LogInformation(
+                    "[Shadow Mode] Would have sold {Quantity} {Symbol}",
+                    trade.Quantity, trade.Symbol);
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogError(ex,
-                    "CloseTradeAsync failed to place broker order for #{Id} {Symbol}",
-                    trade.Id, trade.Symbol);
-                throw new InvalidOperationException(
-                    $"Broker rejected the close order: {ex.Message}", ex);
+                try
+                {
+                    closeOrderId = await _brokerClient.PlaceClosingMarketOrderAsync(
+                        trade.Symbol, closeSide, trade.Quantity);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex,
+                        "CloseTradeAsync failed to place broker order for #{Id} {Symbol}",
+                        trade.Id, trade.Symbol);
+                    throw new InvalidOperationException(
+                        $"Broker rejected the close order: {ex.Message}", ex);
+                }
             }
 
             trade.ExitPrice = currentPrice;
@@ -390,8 +419,50 @@ namespace TradingBot.Services
             portfolio.TotalEquity = portfolio.CurrentBalance + openMarketValue;
             portfolio.LastUpdated = DateTime.UtcNow;
 
+            CheckRiskLimits(portfolio);
+
             await _context.SaveChangesAsync();
             return portfolio;
+        }
+
+        private void CheckRiskLimits(Portfolio portfolio)
+        {
+            var now = DateTime.UtcNow;
+            if (portfolio.LastRiskCheckDate.Date < now.Date)
+                portfolio.StartOfDayBalance = portfolio.CurrentBalance;
+
+            portfolio.LastRiskCheckDate = now;
+            _safety.UpdateHighWaterMark(portfolio);
+
+            var dailyLossLimitPercent = _configuration.GetValue<decimal>(
+                "TradingBot:RiskManagement:DailyLossLimitPercent", 3m);
+            var maxDrawdownLimitPercent = _configuration.GetValue<decimal>(
+                "TradingBot:RiskManagement:MaxDrawdownLimitPercent", 10m);
+
+            var dailyLossThreshold = portfolio.StartOfDayBalance *
+                (1 - dailyLossLimitPercent / 100);
+            if (portfolio.StartOfDayBalance > 0 &&
+                portfolio.CurrentBalance < dailyLossThreshold)
+            {
+                if (!_safety.IsKillSwitchActive)
+                {
+                    _safety.ActivateKillSwitch("Daily Loss Limit Hit");
+                    _logger.LogCritical(
+                        "Kill switch activated: Daily Loss Limit Hit");
+                }
+                return;
+            }
+
+            var drawdownThreshold = portfolio.HighWaterMark *
+                (1 - maxDrawdownLimitPercent / 100);
+            if (portfolio.HighWaterMark > 0 &&
+                portfolio.TotalEquity < drawdownThreshold &&
+                !_safety.IsKillSwitchActive)
+            {
+                _safety.ActivateKillSwitch("Max Drawdown Limit Hit");
+                _logger.LogCritical(
+                    "Kill switch activated: Max Drawdown Limit Hit");
+            }
         }
 
         public async Task<bool> CheckStopLossAndTakeProfitAsync()

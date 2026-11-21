@@ -6,6 +6,13 @@ namespace TradingBot.Models
 {
     public class Portfolio
     {
+        public Portfolio()
+        {
+            HighWaterMark = InitialBalance;
+            StartOfDayBalance = CurrentBalance;
+            LastRiskCheckDate = DateTime.UtcNow;
+        }
+
         [Key]
         public int Id { get; set; }
 
@@ -17,6 +24,14 @@ namespace TradingBot.Models
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal TotalEquity { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal HighWaterMark { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal StartOfDayBalance { get; set; }
+
+        public DateTime LastRiskCheckDate { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal UnrealizedPnL { get; set; }

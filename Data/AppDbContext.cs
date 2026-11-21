@@ -39,7 +39,12 @@ namespace TradingBot.Data
                     Id = 1,
                     InitialBalance = 1000000m,
                     CurrentBalance = 1000000m,
-                    TotalEquity = 1000000m // Phase 1: was 100000m — factor-of-10 typo
+                    TotalEquity = 1000000m, // Phase 1: was 100000m — factor-of-10 typo
+                    HighWaterMark = 1000000m,
+                    StartOfDayBalance = 1000000m,
+                    LastRiskCheckDate = new DateTime(2026, 11, 21, 0, 0, 0, DateTimeKind.Utc),
+                    LastUpdated = new DateTime(2026, 11, 21, 13, 14, 11, 229, DateTimeKind.Utc)
+                        .AddTicks(5018)
                 }
             );
 
@@ -55,7 +60,9 @@ namespace TradingBot.Data
                     StopLossPercent = 2m,
                     TakeProfitPercent = 5m,
                     RiskPerTradePercent = 1m,
-                    Parameters = "{\"ShortPeriod\":20,\"LongPeriod\":50}"
+                    Parameters = "{\"ShortPeriod\":20,\"LongPeriod\":50}",
+                    CreatedAt = new DateTime(2026, 11, 21, 13, 14, 11, 229, DateTimeKind.Utc)
+                        .AddTicks(5177)
                 },
                 new Strategy
                 {
@@ -66,7 +73,9 @@ namespace TradingBot.Data
                     Symbol = "BTCUSDT",
                     StopLossPercent = 3m,
                     TakeProfitPercent = 6m,
-                    Parameters = "{\"OversoldLevel\":30,\"OverboughtLevel\":70,\"Period\":14}"
+                    Parameters = "{\"OversoldLevel\":30,\"OverboughtLevel\":70,\"Period\":14}",
+                    CreatedAt = new DateTime(2026, 11, 21, 13, 14, 11, 229, DateTimeKind.Utc)
+                        .AddTicks(5184)
                 },
                 new Strategy
                 {
@@ -77,7 +86,9 @@ namespace TradingBot.Data
                     Symbol = "BTCUSDT",
                     StopLossPercent = 2.5m,
                     TakeProfitPercent = 7m,
-                    Parameters = "{\"FastPeriod\":12,\"SlowPeriod\":26,\"SignalPeriod\":9}"
+                    Parameters = "{\"FastPeriod\":12,\"SlowPeriod\":26,\"SignalPeriod\":9}",
+                    CreatedAt = new DateTime(2026, 11, 21, 13, 14, 11, 229, DateTimeKind.Utc)
+                        .AddTicks(5187)
                 }
             );
         }

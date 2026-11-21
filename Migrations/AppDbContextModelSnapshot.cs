@@ -179,8 +179,14 @@ namespace Trading_Bot_Website.Migrations
                     b.Property<decimal>("CurrentBalance")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<decimal>("HighWaterMark")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<decimal>("InitialBalance")
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("LastRiskCheckDate")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime>("LastUpdated")
                         .HasColumnType("TEXT");
@@ -192,6 +198,9 @@ namespace Trading_Bot_Website.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("RealizedPnL")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("StartOfDayBalance")
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("TotalEquity")
@@ -215,11 +224,14 @@ namespace Trading_Bot_Website.Migrations
                         {
                             Id = 1,
                             CurrentBalance = 1000000m,
+                            HighWaterMark = 1000000m,
                             InitialBalance = 1000000m,
+                            LastRiskCheckDate = new DateTime(2026, 11, 21, 0, 0, 0, 0, DateTimeKind.Utc),
                             LastUpdated = new DateTime(2026, 11, 21, 13, 14, 11, 229, DateTimeKind.Utc).AddTicks(5018),
                             LosingTrades = 0,
                             MaxDrawdown = 0m,
                             RealizedPnL = 0m,
+                            StartOfDayBalance = 1000000m,
                             TotalEquity = 1000000m,
                             TotalTrades = 0,
                             UnrealizedPnL = 0m,
