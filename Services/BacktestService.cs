@@ -8,6 +8,8 @@ namespace TradingBot.Services
 {
     public class BacktestService : IBacktestService
     {
+        private const decimal FeeRate = 0.001m;
+
         private readonly AppDbContext _context;
         private readonly IMarketDataService _marketDataService;
         private readonly ILogger<BacktestService> _logger;
@@ -77,34 +79,42 @@ namespace TradingBot.Services
                         : 0;
 
                     entryPrice = current.Close;
-                    capital -= position * entryPrice;
+                    var entryCost = position * entryPrice;
+                    var entryFee = entryCost * FeeRate;
+                    capital -= entryCost + entryFee;
 
                     trades.Add(new
                     {
                         Type = "BUY",
                         Date = current.Timestamp,
                         Price = current.Close,
-                        Quantity = position
+                        Quantity = position,
+                        Fee = entryFee
                     });
                 }
                 else if (signal == "SELL" && position > 0)
                 {
                     var exitPrice = current.Close;
-                    var pnl = (exitPrice - entryPrice) * position;
-                    capital += position * exitPrice;
+                    var exitValue = position * exitPrice;
+                    var exitFee = exitValue * FeeRate;
+                    var entryCost = position * entryPrice;
+                    var entryFee = entryCost * FeeRate;
+                    var netPnL = (exitValue - entryCost) - (entryFee + exitFee);
+                    capital += exitValue - exitFee;
 
-                    if (pnl > 0) { wins++; totalWin += pnl; }
-                    else { losses++; totalLoss += Math.Abs(pnl); }
+                    if (netPnL > 0) { wins++; totalWin += netPnL; }
+                    else { losses++; totalLoss += Math.Abs(netPnL); }
 
-                    largestWin = Math.Max(largestWin, pnl);
-                    largestLoss = Math.Min(largestLoss, pnl);
+                    largestWin = Math.Max(largestWin, netPnL);
+                    largestLoss = Math.Min(largestLoss, netPnL);
 
                     trades.Add(new
                     {
                         Type = "SELL",
                         Date = current.Timestamp,
                         Price = exitPrice,
-                        PnL = pnl,
+                        PnL = netPnL,
+                        Fee = exitFee,
                         Return = (double)((exitPrice - entryPrice) /
                                           entryPrice * 100)
                     });
@@ -124,7 +134,9 @@ namespace TradingBot.Services
             if (position > 0)
             {
                 var lastPrice = data.Last().Close;
-                capital += position * lastPrice;
+                var exitValue = position * lastPrice;
+                var exitFee = exitValue * FeeRate;
+                capital += exitValue - exitFee;
             }
 
             result.FinalCapital = Math.Round(capital, 2);
