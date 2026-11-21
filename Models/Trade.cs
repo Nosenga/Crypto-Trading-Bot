@@ -60,6 +60,9 @@ namespace TradingBot.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal? ProfitLoss { get; set; }
 
+        [Column(TypeName = "decimal(18,8)")]
+        public decimal Fees { get; set; }
+
         [Column(TypeName = "decimal(18,2)")]
         public decimal? TotalValue { get; set; }
 

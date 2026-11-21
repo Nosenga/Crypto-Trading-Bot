@@ -24,10 +24,10 @@ namespace TradingBot.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal RealizedPnL { get; set; }
 
-        // CurrentBalance tracks free cash at cost basis; realized P&L is
-        // tracked separately in RealizedPnL. Existing databases may contain
-        // balances accumulated under the previous close logic and require a
-        // migration/backfill before historical balances are corrected.
+        // CurrentBalance tracks actual cash. Realized P&L is reported
+        // separately and is already reflected in cash after a close.
+        // Existing databases with balances from the prior cost-basis close
+        // logic may need a backfill before historical balances reconcile.
         [Column(TypeName = "decimal(18,2)")]
         public decimal TotalPnL => RealizedPnL + UnrealizedPnL;
 

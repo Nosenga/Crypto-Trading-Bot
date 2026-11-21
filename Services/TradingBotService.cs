@@ -14,6 +14,7 @@ namespace TradingBot.Services
         private readonly IConfiguration _configuration;
         private readonly ILogger<TradingBotService> _logger;
         private readonly ISafetyService _safety;
+        private const decimal FeeRate = 0.001m; // 0.1% Binance rate
 
         public TradingBotService(
             AppDbContext context,
@@ -65,10 +66,15 @@ namespace TradingBot.Services
 
             var portfolio = await GetPortfolioAsync();
             var totalCost = quantity * currentPrice;
+            var entryFee = totalCost * FeeRate;
 
-            // Validate balance for buy trades
-            if (type == TradeType.Buy && portfolio.CurrentBalance < totalCost)
-                throw new InvalidOperationException("Insufficient balance");
+            // Validate balance for buy trades, including the entry fee.
+            if (type == TradeType.Buy &&
+                portfolio.CurrentBalance < totalCost + entryFee)
+            {
+                throw new InvalidOperationException(
+                    "Insufficient balance (including fees)");
+            }
 
             // 2. Send the order to the Broker
             string side = type == TradeType.Buy ? "BUY" : "SELL";
@@ -91,6 +97,7 @@ namespace TradingBot.Services
                 Type = type,
                 EntryPrice = currentPrice,
                 Quantity = quantity,
+                Fees = entryFee,
                 TotalValue = totalCost,
                 StopLoss = stopLoss,
                 TakeProfit = takeProfit,
@@ -102,13 +109,9 @@ namespace TradingBot.Services
                 Notes = brokerOrderId // Store the exchange's Order ID here
             };
 
-            // Update portfolio — Buy only. CurrentBalance is CASH ONLY;
-            // realized P&L is tracked separately in RealizedPnL (see
-            // CloseTradeAsync). This is the Phase 1 accounting model:
-            //   CurrentBalance = free cash
-            //   RealizedPnL    = sum of closed-trade profits
-            //   TotalEquity    = CurrentBalance + market value of open longs
-            portfolio.CurrentBalance -= totalCost;
+            // CurrentBalance is actual cash; realized P&L is reported
+            // separately but is already reflected in cash after a close.
+            portfolio.CurrentBalance -= totalCost + entryFee;
 
             portfolio.LastUpdated = DateTime.UtcNow;
             _context.Trades.Add(trade);
@@ -176,27 +179,22 @@ namespace TradingBot.Services
                 ? closeOrderId
                 : $"{trade.Notes} | close={closeOrderId}";
 
-            // Calculate P&L
-            if (trade.Type == TradeType.Buy)
-                trade.ProfitLoss = (currentPrice - trade.EntryPrice) * trade.Quantity;
-            else // Sell order (Short)
-                trade.ProfitLoss = (trade.EntryPrice - currentPrice) * trade.Quantity;
+            var exitValue = trade.Quantity * currentPrice;
+            var exitFee = exitValue * FeeRate;
+            var grossPnL = trade.Type == TradeType.Buy
+                ? (currentPrice - trade.EntryPrice) * trade.Quantity
+                : (trade.EntryPrice - currentPrice) * trade.Quantity;
+
+            trade.ProfitLoss = grossPnL - trade.Fees - exitFee;
+            trade.Fees += exitFee;
 
             trade.Status = TradeStatus.Closed;
 
-            // Update portfolio (Phase 1 accounting model — single source of truth).
-            // CurrentBalance is CASH ONLY. When we opened the long we did
-            //   CurrentBalance -= (quantity * entryPrice)
-            // so on close we return exactly that cost basis to cash:
-            //   CurrentBalance += (quantity * entryPrice)
-            // The profit/loss (exit - entry) * quantity is recorded ONLY in
-            // RealizedPnL. Cash + realized P&L then reconcile correctly, and
-            // TotalEquity (computed in UpdatePortfolioAsync) stays consistent.
-            // Do NOT also add (currentPrice * quantity) to CurrentBalance —
-            // that was the 308M double-count.
+            // Return actual sale proceeds to cash. RealizedPnL is a reporting
+            // metric and must not be added to TotalEquity a second time.
             var portfolio = await GetPortfolioAsync();
-            portfolio.CurrentBalance += (trade.Quantity * trade.EntryPrice);
-            portfolio.RealizedPnL += trade.ProfitLoss ?? 0;
+            portfolio.CurrentBalance += exitValue - exitFee;
+            portfolio.RealizedPnL += trade.ProfitLoss.Value;
 
             if (trade.ProfitLoss > 0) portfolio.WinningTrades++;
             else if (trade.ProfitLoss < 0) portfolio.LosingTrades++;
@@ -291,13 +289,12 @@ namespace TradingBot.Services
                 trade.Id, trade.Symbol, currentPrice);
             continue;
         }
-        if (trade.Type == TradeType.Buy)
-            unrealizedPnL += (currentPrice - trade.EntryPrice) * trade.Quantity;
-        else
-            unrealizedPnL += (trade.EntryPrice - currentPrice) * trade.Quantity;
+        var grossPnL = trade.Type == TradeType.Buy
+            ? (currentPrice - trade.EntryPrice) * trade.Quantity
+            : (trade.EntryPrice - currentPrice) * trade.Quantity;
+        unrealizedPnL += grossPnL - trade.Fees;
     }
 
-            // CurrentBalance excludes realized P&L, so include it separately.
             decimal openMarketValue = 0m;
             foreach (var trade in openTrades)
             {
@@ -310,9 +307,7 @@ namespace TradingBot.Services
             }
 
             portfolio.UnrealizedPnL = unrealizedPnL;
-            portfolio.TotalEquity = portfolio.CurrentBalance
-                + portfolio.RealizedPnL
-                + openMarketValue;
+            portfolio.TotalEquity = portfolio.CurrentBalance + openMarketValue;
             portfolio.LastUpdated = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
