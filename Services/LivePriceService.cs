@@ -104,7 +104,10 @@ namespace TradingBot.Services
                     var signalService = symbolScope.ServiceProvider
                         .GetRequiredService<ISignalService>();
 
-                    await marketService.AppendLiveCandleAsync(symbol, price);
+                    // Fetch real 1m candles from Binance and update DB
+                    await marketService.RefreshRecentCandlesAsync(symbol, "1m", 100);
+                    
+                    // Generate signals based on the updated real candles
                     await signalService.GenerateSignalsAsync(symbol);
                 }
                 catch (Exception ex)
