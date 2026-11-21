@@ -34,10 +34,9 @@ namespace TradingBot.Services
 
             if (data.Count < 50)
             {
-                // Generate simulated data if not enough history
-                data = await _marketDataService
-                    .GenerateSimulatedDataAsync(strategy.Symbol,
-                        (int)(endDate - startDate).TotalDays);
+                throw new InvalidOperationException(
+                    $"Not enough historical data for {strategy.Symbol} in this date range. " +
+                    $"Found {data.Count} candles. Fetch real data first or adjust the dates.");
             }
 
             var result = new BacktestResult

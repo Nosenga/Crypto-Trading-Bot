@@ -1,4 +1,3 @@
-// Services/MarketDataService.cs
 using Microsoft.EntityFrameworkCore;
 using TradingBot.Core.Interfaces;
 using TradingBot.Data;
@@ -10,21 +9,7 @@ namespace TradingBot.Services
     {
         private readonly AppDbContext _context;
         private readonly ILogger<MarketDataService> _logger;
-        private readonly Random _random = new();
         private readonly IPriceFeed _priceFeed;
-
-        // Simulated real-time prices
-        private static readonly Dictionary<string, decimal> _livePrices = new()
-        {
-            ["BTCUSDT"] = 43500m,
-            ["ETHUSDT"] = 2650m,
-            ["BNBUSDT"] = 310m,
-            ["ADAUSDT"] = 0.45m,
-            ["SOLUSDT"] = 98m,
-            ["XRPUSDT"] = 0.62m,
-            ["DOTUSDT"] = 7.50m,
-            ["DOGEUSDT"] = 0.085m
-        };
 
         public MarketDataService(
             AppDbContext context,
@@ -53,55 +38,6 @@ namespace TradingBot.Services
                 .Where(m => m.Symbol == symbol)
                 .OrderByDescending(m => m.Timestamp)
                 .FirstOrDefaultAsync();
-        }
-
-        public async Task<List<MarketData>> GenerateSimulatedDataAsync(
-            string symbol, int days = 30)
-        {
-            var data = new List<MarketData>();
-            var basePrice = _livePrices.GetValueOrDefault(symbol, 100m);
-            var startDate = DateTime.UtcNow.AddDays(-days);
-            var currentPrice = basePrice * (1 - (decimal)(_random.NextDouble() * 0.2));
-
-            for (int i = 0; i < days * 24; i++) // hourly data
-            {
-                var timestamp = startDate.AddHours(i);
-
-                // Simulate realistic price movement (random walk with trend)
-                var changePercent = (decimal)(_random.NextDouble() * 0.04 - 0.018);
-                var newPrice = currentPrice * (1 + changePercent);
-
-                var high = newPrice * (1 + (decimal)(_random.NextDouble() * 0.01));
-                var low = newPrice * (1 - (decimal)(_random.NextDouble() * 0.01));
-                var open = currentPrice;
-                var close = newPrice;
-                var volume = (decimal)(_random.NextDouble() * 1000 + 100);
-
-                data.Add(new MarketData
-                {
-                    Symbol = symbol,
-                    Open = Math.Round(open, 8),
-                    High = Math.Round(high, 8),
-                    Low = Math.Round(low, 8),
-                    Close = Math.Round(close, 8),
-                    Volume = Math.Round(volume, 8),
-                    Timestamp = timestamp
-                });
-
-                currentPrice = newPrice;
-            }
-
-            // Calculate technical indicators
-            data = await CalculateIndicatorsAsync(data);
-
-            // Save to database
-            _context.MarketData.AddRange(data);
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation(
-                "Generated {Count} data points for {Symbol}", data.Count, symbol);
-
-            return data;
         }
 
         public async Task<Dictionary<string, decimal>> GetPriceUpdatesAsync(
@@ -167,47 +103,69 @@ namespace TradingBot.Services
             return await Task.FromResult(data);
         }
 
-        public async Task AppendLiveCandleAsync(string symbol, decimal price)
+        public async Task RefreshRecentCandlesAsync(
+            string symbol, string timeframe = "1m", int limit = 100)
         {
-            var recent = await _context.MarketData
-                .Where(m => m.Symbol == symbol)
-                .OrderBy(m => m.Timestamp)
-                .ToListAsync();
-
-            // Not enough history yet for indicators to mean anything — backfill once.
-            if (recent.Count < 60)
+            // 1. Calculate the time window based on timeframe and limit
+            var minutesPerCandle = timeframe.ToLowerInvariant() switch
             {
-                await GenerateSimulatedDataAsync(symbol, days: 5);
-                recent = await _context.MarketData
-                    .Where(m => m.Symbol == symbol)
-                    .OrderBy(m => m.Timestamp)
-                    .ToListAsync();
-            }
-
-            var last = recent.LastOrDefault();
-            var open = last?.Close ?? price;
-            // Logical increment (not wall-clock) so timestamps never collide
-            // with the append cadence and stay ordered relative to backfilled data.
-            var timestamp = (last?.Timestamp ?? DateTime.UtcNow).AddMinutes(1);
-
-            var candle = new MarketData
-            {
-                Symbol = symbol,
-                Open = open,
-                Close = price,
-                High = Math.Round(Math.Max(open, price) * 1.0005m, 8),
-                Low = Math.Round(Math.Min(open, price) * 0.9995m, 8),
-                Volume = Math.Round((decimal)(_random.NextDouble() * 1000 + 100), 8),
-                Timestamp = timestamp
+                "1m" => 1,
+                "5m" => 5,
+                "15m" => 15,
+                "1h" => 60,
+                "4h" => 240,
+                "1d" => 1440,
+                _ => 1
             };
 
-            _context.MarketData.Add(candle);
-            recent.Add(candle);
+            var to = DateTime.UtcNow;
+            var from = to.AddMinutes(-minutesPerCandle * limit);
 
-            // Recompute indicators over the trailing window and persist.
-            var window = recent.Skip(Math.Max(0, recent.Count - 120)).ToList();
-            await CalculateIndicatorsAsync(window);
+            // 2. Fetch real klines from Binance via the PriceFeed
+            var newCandles = await _priceFeed.GetHistoricalCandlesAsync(symbol, from, to, timeframe);
 
+            if (!newCandles.Any())
+            {
+                _logger.LogWarning("No new candles fetched for {Symbol} ({Timeframe})", symbol, timeframe);
+                return;
+            }
+
+            // 3. Fetch existing candles in this time window from DB
+            var existing = await _context.MarketData
+                .Where(m => m.Symbol == symbol && m.Timestamp >= from)
+                .ToListAsync();
+
+            // 4. Upsert into the database
+            foreach (var candle in newCandles)
+            {
+                var match = existing.FirstOrDefault(e => e.Timestamp == candle.Timestamp);
+                if (match != null)
+                {
+                    // Update existing candle (it might have been incomplete on the last fetch)
+                    match.Open = candle.Open;
+                    match.High = candle.High;
+                    match.Low = candle.Low;
+                    match.Close = candle.Close;
+                    match.Volume = candle.Volume;
+                }
+                else
+                {
+                    // Add new candle
+                    _context.MarketData.Add(candle);
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            // 5. Recalculate indicators over a larger window (e.g. 200 candles) to ensure accuracy
+            var allRecent = await _context.MarketData
+                .Where(m => m.Symbol == symbol)
+                .OrderByDescending(m => m.Timestamp)
+                .Take(200)
+                .ToListAsync();
+
+            allRecent.Reverse();
+            await CalculateIndicatorsAsync(allRecent);
             await _context.SaveChangesAsync();
         }
 
@@ -215,8 +173,6 @@ namespace TradingBot.Services
         {
             var ema = new List<decimal>();
             var multiplier = 2m / (period + 1);
-
-            // First EMA = SMA
             var firstSma = prices.Take(period).Average();
             ema.Add(firstSma);
 
