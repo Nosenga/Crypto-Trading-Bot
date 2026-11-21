@@ -5,7 +5,7 @@ using TradingBot.Services;
 
 namespace TradingBot.Hubs
 {
-    [Authorize]
+    // [Authorize] - public prize broadcast
     public class TradingHub : Hub
     {
         private readonly IMarketDataService _marketDataService;
