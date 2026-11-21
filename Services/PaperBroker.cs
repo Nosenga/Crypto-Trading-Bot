@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 using TradingBot.Core.Interfaces;
+using TradingBot.Data;
 using TradingBot.Models;
 
 namespace TradingBot.Services
@@ -8,7 +10,7 @@ namespace TradingBot.Services
     {
         private readonly ISafetyService _safety;
         private readonly IPriceFeed _priceFeed;
-        private readonly ConcurrentDictionary<string, (decimal StepSize, decimal MinNotional)> _filters =
+        private readonly ConcurrentDictionary<string, (decimal StepSize, decimal MinNotional, decimal TickSize)> _filters =
             new(StringComparer.OrdinalIgnoreCase);
 
         public PaperBroker(ISafetyService safety, IPriceFeed priceFeed)
@@ -45,6 +47,17 @@ namespace TradingBot.Services
             return RoundQuantity(symbol, quantity);
         }
 
+        public async Task<(decimal StopPrice, decimal LimitPrice)> NormalizeOcoPricesAsync(
+            string symbol, decimal stopPrice, decimal limitPrice)
+        {
+            if (stopPrice <= 0 || limitPrice <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(stopPrice), "OCO stop and limit prices must be greater than zero.");
+
+            await EnsureFiltersLoadedAsync(symbol);
+            return (RoundPriceUp(symbol, stopPrice), RoundPriceDown(symbol, limitPrice));
+        }
+
         private async Task EnsureFiltersLoadedAsync(string symbol)
         {
             if (!_filters.ContainsKey(symbol))
@@ -63,6 +76,24 @@ namespace TradingBot.Services
 
             var steps = Math.Floor(quantity / filter.StepSize);
             return steps * filter.StepSize;
+        }
+
+        private decimal RoundPriceDown(string symbol, decimal price)
+        {
+            if (!_filters.TryGetValue(symbol, out var filter) || filter.TickSize <= 0)
+                throw new InvalidOperationException(
+                    $"Exchange price tick for {symbol} is unavailable.");
+
+            return Math.Floor(price / filter.TickSize) * filter.TickSize;
+        }
+
+        private decimal RoundPriceUp(string symbol, decimal price)
+        {
+            if (!_filters.TryGetValue(symbol, out var filter) || filter.TickSize <= 0)
+                throw new InvalidOperationException(
+                    $"Exchange price tick for {symbol} is unavailable.");
+
+            return Math.Ceiling(price / filter.TickSize) * filter.TickSize;
         }
 
         private void ValidateNotional(string symbol, decimal quantity, decimal price)
@@ -173,6 +204,23 @@ namespace TradingBot.Services
             var orderId = Guid.NewGuid().ToString();
             return orderId;
         }
+
+        public Task<List<Trade>> GetOpenExchangePositionsAsync() =>
+            Task.FromResult(new List<Trade>());
+
+        public Task<string> PlaceOcoOrderAsync(
+            string symbol, string side, decimal quantity,
+            decimal stopPrice, decimal limitPrice)
+        {
+            if (_safety.IsKillSwitchActive)
+                throw new InvalidOperationException(
+                    $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
+
+            return Task.FromResult($"PAPER_OCO_{Guid.NewGuid()}");
+        }
+
+        public Task SyncOpenTradesAsync(AppDbContext db, ILogger logger) =>
+            Task.CompletedTask;
 
         public Task<bool> CancelOrderAsync(string orderId)
         {

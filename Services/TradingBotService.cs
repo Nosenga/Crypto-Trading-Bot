@@ -64,6 +64,21 @@ namespace TradingBot.Services
             if (currentPrice == 0)
                 throw new InvalidOperationException($"Unable to get price for {symbol}");
 
+            if (stopLoss is > 0 && takeProfit is > 0)
+            {
+                var normalizedPrices = await _brokerClient.NormalizeOcoPricesAsync(
+                    symbol, stopLoss.Value, takeProfit.Value);
+                stopLoss = normalizedPrices.StopPrice;
+                takeProfit = normalizedPrices.LimitPrice;
+
+                if (stopLoss.Value >= currentPrice ||
+                    takeProfit.Value <= currentPrice)
+                {
+                    throw new InvalidOperationException(
+                        $"OCO stop and take-profit prices are invalid for the current {symbol} price.");
+                }
+            }
+
             var portfolio = await GetPortfolioAsync();
             var totalCost = quantity * currentPrice;
             var entryFee = totalCost * FeeRate;
@@ -117,7 +132,72 @@ namespace TradingBot.Services
             _context.Trades.Add(trade);
             await _context.SaveChangesAsync();
 
-            // Refresh after persisting the trade so its market value is included.
+            if (stopLoss is > 0 && takeProfit is > 0)
+            {
+                try
+                {
+                    var ocoClientOrderId = await _brokerClient.PlaceOcoOrderAsync(
+                        symbol, "SELL", quantity, stopLoss.Value, takeProfit.Value);
+                    trade.Notes = $"{trade.Notes} | OCO_CLIENT:{ocoClientOrderId}";
+                    await _context.SaveChangesAsync();
+                }
+                catch (OcoPlacementOutcomeUnknownException ex)
+                {
+                    trade.Notes = $"{trade.Notes} | OCO_CLIENT:{ex.ClientOrderId}";
+                    await _context.SaveChangesAsync();
+
+                    _logger.LogCritical(
+                        ex,
+                        "OCO placement status is uncertain for {Symbol}; leaving trade #{TradeId} open",
+                        symbol,
+                        trade.Id);
+                    throw new InvalidOperationException(
+                        "OCO placement status is uncertain. The position remains open; " +
+                        "check Binance before taking further action.",
+                        ex);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "OCO placement failed for {Symbol}; attempting an emergency close",
+                        symbol);
+
+                    try
+                    {
+                        var closedTrade = await CloseTradeAsync(trade.Id);
+                        if (closedTrade == null)
+                        {
+                            throw new InvalidOperationException(
+                                $"Trade #{trade.Id} could not be closed after OCO placement failed.");
+                        }
+
+                        await UpdatePortfolioAsync();
+                    }
+                    catch (Exception closeException)
+                    {
+                        trade.Notes =
+                            $"{trade.Notes} | OCO_FAILED; emergency close also failed";
+                        await _context.SaveChangesAsync();
+                        _logger.LogCritical(
+                            closeException,
+                            "Emergency close failed for trade #{TradeId} {Symbol} after OCO failure",
+                            trade.Id,
+                            symbol);
+                        throw new InvalidOperationException(
+                            "Could not secure the position with OCO, and the emergency close failed. " +
+                            "The position remains open and requires immediate review.",
+                            new AggregateException(ex, closeException));
+                    }
+
+                    throw new InvalidOperationException(
+                        "Could not secure the position with OCO. The position was closed.",
+                        ex);
+                }
+            }
+
+            // Refresh after OCO placement so the trade and its protection are
+            // already persisted before the portfolio refresh does more I/O.
             await UpdatePortfolioAsync();
 
             _logger.LogInformation(

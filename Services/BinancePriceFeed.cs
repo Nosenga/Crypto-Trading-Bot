@@ -1,6 +1,9 @@
+using Binance.Net;
 using Binance.Net.Clients;
 using Binance.Net.Enums;
 using Binance.Net.Objects.Models.Spot;
+using Binance.Net.Objects;
+using Microsoft.Extensions.Configuration;
 using TradingBot.Core.Interfaces;
 using TradingBot.Models;
 
@@ -9,10 +12,28 @@ namespace TradingBot.Services
     public sealed class BinancePriceFeed : IPriceFeed
     {
         private readonly ILogger<BinancePriceFeed> _logger;
+        private readonly string _apiKey;
+        private readonly string _apiSecret;
 
-        public BinancePriceFeed(ILogger<BinancePriceFeed> logger)
+        public BinancePriceFeed(ILogger<BinancePriceFeed> logger, IConfiguration configuration)
         {
             _logger = logger;
+            _apiKey = configuration["TradingBot:Binance:ApiKey"] ?? string.Empty;
+            _apiSecret = configuration["TradingBot:Binance:ApiSecret"] ?? string.Empty;
+        }
+
+        private BinanceClient CreateClient()
+        {
+            return new BinanceClient(new BinanceClientOptions
+            {
+                ApiCredentials = string.IsNullOrEmpty(_apiKey) 
+                    ? null 
+                    : new BinanceApiCredentials(_apiKey, _apiSecret),
+                SpotApiOptions = new BinanceApiClientOptions
+                {
+                    BaseAddress = "https://testnet.binance.vision"
+                }
+            });
         }
 
         public async Task<decimal> GetCurrentPriceAsync(string symbol)
@@ -22,7 +43,7 @@ namespace TradingBot.Services
 
             try
             {
-                using var client = new BinanceClient();
+                using var client = CreateClient();
                 var result = await client.SpotApi.ExchangeData.GetPriceAsync(symbol);
 
                 if (!result.Success || result.Data.Price <= 0)
@@ -50,7 +71,7 @@ namespace TradingBot.Services
 
             try
             {
-                using var client = new BinanceClient();
+                using var client = CreateClient();
                 var tickers = await client.SpotApi.ExchangeData.GetTickersAsync(symbolList);
 
                 if (!tickers.Success)
@@ -80,7 +101,7 @@ namespace TradingBot.Services
         {
             try
             {
-                using var client = new BinanceClient();
+                using var client = CreateClient();
                 var interval = timeframe.ToLowerInvariant() switch
                 {
                     "1m" => KlineInterval.OneMinute,
@@ -112,8 +133,6 @@ namespace TradingBot.Services
                     Close = k.ClosePrice,
                     Volume = k.Volume,
                     Timestamp = k.OpenTime,
-
-                    //Phase 2c: Populate the new fields
                     CloseTime = k.CloseTime,
                     IsClosed = k.CloseTime <= DateTime.UtcNow,
                 }).ToList();
@@ -125,12 +144,12 @@ namespace TradingBot.Services
             }
         }
 
-        public async Task<Dictionary<string, (decimal StepSize, decimal MinNotional)>> GetExchangeFiltersAsync(IEnumerable<string> symbols)
+        public async Task<Dictionary<string, (decimal StepSize, decimal MinNotional, decimal TickSize)>> GetExchangeFiltersAsync(IEnumerable<string> symbols)
         {
-            var filters = new Dictionary<string, (decimal, decimal)>(StringComparer.OrdinalIgnoreCase);
+            var filters = new Dictionary<string, (decimal, decimal, decimal)>(StringComparer.OrdinalIgnoreCase);
             var symbolList = symbols.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            using var client = new BinanceClient();
+            using var client = CreateClient();
             var result = await client.SpotApi.ExchangeData.GetExchangeInfoAsync();
 
             if (!result.Success)
@@ -144,6 +163,9 @@ namespace TradingBot.Services
                 var lotSizeFilter = symbolInfo.Filters
                     .OfType<BinanceSymbolLotSizeFilter>()
                     .FirstOrDefault();
+                var priceFilter = symbolInfo.Filters
+                    .OfType<BinanceSymbolPriceFilter>()
+                    .FirstOrDefault();
                 var notionalFilter = symbolInfo.Filters
                     .OfType<BinanceSymbolNotionalFilter>()
                     .FirstOrDefault();
@@ -155,6 +177,8 @@ namespace TradingBot.Services
 
                 if (lotSizeFilter == null ||
                     lotSizeFilter.StepSize <= 0 ||
+                    priceFilter == null ||
+                    priceFilter.TickSize <= 0 ||
                     minNotional == null ||
                     minNotional <= 0)
                 {
@@ -162,7 +186,10 @@ namespace TradingBot.Services
                         $"Binance exchange filters are incomplete for {symbolInfo.Name}.");
                 }
 
-                filters[symbolInfo.Name] = (lotSizeFilter.StepSize, minNotional.Value);
+                filters[symbolInfo.Name] = (
+                    lotSizeFilter.StepSize,
+                    minNotional.Value,
+                    priceFilter.TickSize);
             }
 
             var missingSymbols = symbolList

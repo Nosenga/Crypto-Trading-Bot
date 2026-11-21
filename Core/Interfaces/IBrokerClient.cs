@@ -1,7 +1,9 @@
 // Place this in: Trading_Bot_Website/Core/Interfaces/IBrokerClient.cs
 // OR if you choose Option 2: Trading_Bot_Website/Services/IBrokerClient.cs
 
-using TradingBot.Models; // So you can use your existing MarketData model
+using Microsoft.Extensions.Logging;
+using TradingBot.Data;
+using TradingBot.Models;
 
 namespace TradingBot.Core.Interfaces
 {
@@ -21,9 +23,28 @@ namespace TradingBot.Core.Interfaces
         Task<string> PlaceMarketOrderAsync(string symbol, string side, decimal quantity);
         Task<string> PlaceClosingMarketOrderAsync(string symbol, string side, decimal quantity);
         Task<string> PlaceLimitOrderAsync(string symbol, string side, decimal quantity, decimal price);
+        Task<List<Trade>> GetOpenExchangePositionsAsync();
+        Task<string> PlaceOcoOrderAsync(
+            string symbol, string side, decimal quantity,
+            decimal stopPrice, decimal limitPrice);
+        Task<(decimal StopPrice, decimal LimitPrice)> NormalizeOcoPricesAsync(
+            string symbol, decimal stopPrice, decimal limitPrice);
+        Task SyncOpenTradesAsync(AppDbContext db, ILogger logger);
         Task<bool> CancelOrderAsync(string orderId);
         
         // 4. Order Status
         Task<object> GetOrderStatusAsync(string orderId); // You can create an OrderResponse model for this
+    }
+
+    public sealed class OcoPlacementOutcomeUnknownException : InvalidOperationException
+    {
+        public OcoPlacementOutcomeUnknownException(
+            string clientOrderId, string message, Exception? innerException = null)
+            : base(message, innerException)
+        {
+            ClientOrderId = clientOrderId;
+        }
+
+        public string ClientOrderId { get; }
     }
 }

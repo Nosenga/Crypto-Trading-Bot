@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TradingBot.Data;
 using TradingBot.Hubs;
+using TradingBot.Models;
 using TradingBot.Services;
 using TradingBot.Core.Interfaces;
 
@@ -123,6 +124,62 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate(); // apply migrations if any
+
+    if (tradingMode.Equals("Live", StringComparison.OrdinalIgnoreCase))
+    {
+        var broker = scope.ServiceProvider.GetRequiredService<IBrokerClient>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        var exchangePositions = await broker.GetOpenExchangePositionsAsync();
+        var dbPositions = await db.Trades
+            .Where(trade => trade.Status == TradeStatus.Executed)
+            .ToListAsync();
+        var importedPosition = false;
+
+        foreach (var exchangePosition in exchangePositions)
+        {
+            var clientOrderMarker = exchangePosition.Notes?
+                .Split('|', StringSplitOptions.TrimEntries)
+                .FirstOrDefault();
+            if (string.IsNullOrEmpty(clientOrderMarker) ||
+                !clientOrderMarker.StartsWith(
+                    "OCO_CLIENT:", StringComparison.Ordinal))
+            {
+                logger.LogWarning(
+                    "Skipping exchange position {Symbol}: its bot OCO marker is missing",
+                    exchangePosition.Symbol);
+                continue;
+            }
+
+            var alreadyTracked = dbPositions.Any(trade =>
+                trade.Notes?.Contains(
+                    clientOrderMarker, StringComparison.Ordinal) == true);
+            if (alreadyTracked)
+                continue;
+
+            var ambiguousExistingPosition = dbPositions.Any(trade =>
+                trade.Symbol == exchangePosition.Symbol &&
+                (trade.Notes == null ||
+                 !trade.Notes.Contains("OCO_CLIENT:", StringComparison.Ordinal)));
+            if (ambiguousExistingPosition)
+            {
+                logger.LogWarning(
+                    "Exchange position {Symbol} has a bot OCO, but an unmarked DB position already exists; " +
+                    "skipping automatic import to avoid duplicating a position",
+                    exchangePosition.Symbol);
+                continue;
+            }
+
+            logger.LogWarning(
+                "Importing orphaned bot OCO position {Symbol} from Binance; entry price is estimated",
+                exchangePosition.Symbol);
+            db.Trades.Add(exchangePosition);
+            dbPositions.Add(exchangePosition);
+            importedPosition = true;
+        }
+
+        if (importedPosition)
+            await db.SaveChangesAsync();
+    }
 }
 
 // --- 10. PIPELINE ---
