@@ -1,6 +1,7 @@
 // Services/BacktestService.cs
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using TradingBot.Core.Interfaces;
 using TradingBot.Data;
 using TradingBot.Models;
 
@@ -11,15 +12,18 @@ namespace TradingBot.Services
         private const decimal FeeRate = 0.001m;
 
         private readonly AppDbContext _context;
+        private readonly IPriceFeed _priceFeed;
         private readonly IMarketDataService _marketDataService;
         private readonly ILogger<BacktestService> _logger;
 
         public BacktestService(
             AppDbContext context,
+            IPriceFeed priceFeed,
             IMarketDataService marketDataService,
             ILogger<BacktestService> logger)
         {
             _context = context;
+            _priceFeed = priceFeed;
             _marketDataService = marketDataService;
             _logger = logger;
         }
@@ -36,9 +40,9 @@ namespace TradingBot.Services
 
             if (data.Count < 50)
             {
-                throw new InvalidOperationException(
-                    $"Not enough historical data for {strategy.Symbol} in this date range. " +
-                    $"Found {data.Count} candles. Fetch real data first or adjust the dates.");
+                data = await _priceFeed.GetHistoricalCandlesAsync(
+                    strategy.Symbol, startDate, endDate, "1h");
+                data = await _marketDataService.CalculateIndicatorsAsync(data);
             }
 
             var result = new BacktestResult
@@ -61,66 +65,101 @@ namespace TradingBot.Services
             var totalLoss = 0m;
             decimal largestWin = 0, largestLoss = 0;
             var peakEquity = capital;
+            var stopLossPrice = 0m;
+            var takeProfitPrice = 0m;
+            const decimal slippage = 0.0005m;
+
+            void ClosePosition(decimal exitPrice, DateTime timestamp)
+            {
+                var exitValue = position * exitPrice;
+                var exitFee = exitValue * FeeRate;
+                var entryCost = position * entryPrice;
+                var entryFee = entryCost * FeeRate;
+                var netPnL = (exitValue - entryCost) - (entryFee + exitFee);
+                capital += exitValue - exitFee;
+
+                if (netPnL > 0) { wins++; totalWin += netPnL; }
+                else { losses++; totalLoss += Math.Abs(netPnL); }
+
+                largestWin = Math.Max(largestWin, netPnL);
+                largestLoss = Math.Min(largestLoss, netPnL);
+
+                trades.Add(new
+                {
+                    Type = "SELL",
+                    Date = timestamp,
+                    Price = exitPrice,
+                    PnL = netPnL,
+                    Fee = exitFee,
+                    Return = (double)((exitPrice - entryPrice) /
+                                      entryPrice * 100)
+                });
+
+                position = 0;
+                entryPrice = 0;
+                stopLossPrice = 0;
+                takeProfitPrice = 0;
+            }
 
             for (int i = 50; i < data.Count; i++)
             {
                 var current = data[i];
-                var signal = GetStrategySignal(strategy.Type, data, i);
-
-                if (signal == "BUY" && position == 0)
+                var exitedOnThisCandle = false;
+                if (position > 0)
                 {
-                    // Calculate position size based on risk
-                    var riskAmount =
-                        capital * (strategy.RiskPerTradePercent / 100);
-                    var stopLossAmount = current.Close *
-                        (strategy.StopLossPercent / 100);
-                    position = stopLossAmount > 0
-                        ? riskAmount / stopLossAmount
-                        : 0;
+                    decimal? triggerPrice = null;
+                    if (current.Low <= stopLossPrice)
+                        triggerPrice = stopLossPrice;
+                    else if (current.High >= takeProfitPrice)
+                        triggerPrice = takeProfitPrice;
 
-                    entryPrice = current.Close;
-                    var entryCost = position * entryPrice;
-                    var entryFee = entryCost * FeeRate;
-                    capital -= entryCost + entryFee;
-
-                    trades.Add(new
+                    if (triggerPrice.HasValue)
                     {
-                        Type = "BUY",
-                        Date = current.Timestamp,
-                        Price = current.Close,
-                        Quantity = position,
-                        Fee = entryFee
-                    });
+                        ClosePosition(
+                            triggerPrice.Value * (1 - slippage),
+                            current.Timestamp);
+                        exitedOnThisCandle = true;
+                    }
                 }
-                else if (signal == "SELL" && position > 0)
+
+                if (!exitedOnThisCandle)
                 {
-                    var exitPrice = current.Close;
-                    var exitValue = position * exitPrice;
-                    var exitFee = exitValue * FeeRate;
-                    var entryCost = position * entryPrice;
-                    var entryFee = entryCost * FeeRate;
-                    var netPnL = (exitValue - entryCost) - (entryFee + exitFee);
-                    capital += exitValue - exitFee;
-
-                    if (netPnL > 0) { wins++; totalWin += netPnL; }
-                    else { losses++; totalLoss += Math.Abs(netPnL); }
-
-                    largestWin = Math.Max(largestWin, netPnL);
-                    largestLoss = Math.Min(largestLoss, netPnL);
-
-                    trades.Add(new
+                    var signal = GetStrategySignal(strategy.Type, data, i);
+                    if (signal == "BUY" && position == 0)
                     {
-                        Type = "SELL",
-                        Date = current.Timestamp,
-                        Price = exitPrice,
-                        PnL = netPnL,
-                        Fee = exitFee,
-                        Return = (double)((exitPrice - entryPrice) /
-                                          entryPrice * 100)
-                    });
+                        entryPrice = current.Close * (1 + slippage);
+                        var riskAmount =
+                            capital * (strategy.RiskPerTradePercent / 100);
+                        var stopLossAmount = entryPrice *
+                            (strategy.StopLossPercent / 100);
+                        position = stopLossAmount > 0
+                            ? riskAmount / stopLossAmount
+                            : 0;
 
-                    position = 0;
-                    entryPrice = 0;
+                        stopLossPrice = entryPrice *
+                            (1 - strategy.StopLossPercent / 100);
+                        takeProfitPrice = entryPrice *
+                            (1 + strategy.TakeProfitPercent / 100);
+
+                        var entryCost = position * entryPrice;
+                        var entryFee = entryCost * FeeRate;
+                        capital -= entryCost + entryFee;
+
+                        trades.Add(new
+                        {
+                            Type = "BUY",
+                            Date = current.Timestamp,
+                            Price = entryPrice,
+                            Quantity = position,
+                            Fee = entryFee
+                        });
+                    }
+                    else if (signal == "SELL" && position > 0)
+                    {
+                        ClosePosition(
+                            current.Close * (1 - slippage),
+                            current.Timestamp);
+                    }
                 }
 
                 // Track equity
@@ -133,7 +172,7 @@ namespace TradingBot.Services
             // Close any remaining position at last price
             if (position > 0)
             {
-                var lastPrice = data.Last().Close;
+                var lastPrice = data.Last().Close * (1 - slippage);
                 var exitValue = position * lastPrice;
                 var exitFee = exitValue * FeeRate;
                 capital += exitValue - exitFee;
@@ -198,7 +237,8 @@ namespace TradingBot.Services
                         returns.Select(r =>
                             Math.Pow(r - avgReturn, 2)).Average());
                     result.SharpeRatio = stdDev > 0
-                        ? Math.Round(avgReturn / stdDev * Math.Sqrt(252), 2)
+                        // 8760 hourly periods per year (24 hours * 365 days).
+                        ? Math.Round(avgReturn / stdDev * Math.Sqrt(8760), 2)
                         : 0;
                 }
             }

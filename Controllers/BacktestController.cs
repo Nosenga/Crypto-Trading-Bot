@@ -58,14 +58,7 @@ namespace TradingBot.Controllers
             var result = await _backtestService.GetBacktestResultAsync(id);
             if (result == null) return NotFound();
 
-            var viewModel = new BacktestViewModel
-            {
-                Strategies = await _context.Strategies.ToListAsync(),
-                Result = result,
-                History = await _backtestService.GetBacktestHistoryAsync()
-            };
-
-            return View(viewModel);
+            return View(result);
         }
     }
 }
