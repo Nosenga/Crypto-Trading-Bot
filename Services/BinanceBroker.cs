@@ -6,19 +6,22 @@ using Binance.Net.Objects;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TradingBot.Core.Interfaces;
+using TradingBot.Data;
 using TradingBot.Models;
 
 namespace TradingBot.Services;
 
 public class BinanceBroker : IBrokerClient
 {
+    private const string BotOcoClientOrderIdPrefix = "TB-";
+
     private readonly ILogger<BinanceBroker> _logger;
     private readonly string _apiKey;
     private readonly string _apiSecret;
     private readonly bool _enableLiveOrders;
     private readonly ISafetyService _safety;
     private readonly IPriceFeed _priceFeed;
-    private readonly ConcurrentDictionary<string, (decimal StepSize, decimal MinNotional)> _filters =
+    private readonly ConcurrentDictionary<string, (decimal StepSize, decimal MinNotional, decimal TickSize)> _filters =
         new(StringComparer.OrdinalIgnoreCase);
 
     // Binance requires the symbol when cancelling or querying a Spot order.
@@ -55,7 +58,13 @@ public class BinanceBroker : IBrokerClient
     {
         return new BinanceClient(new BinanceClientOptions
         {
-            ApiCredentials = new BinanceApiCredentials(_apiKey, _apiSecret)
+            ApiCredentials = new BinanceApiCredentials(_apiKey, _apiSecret),
+            SpotApiOptions = new BinanceApiClientOptions
+            {
+                AutoTimestamp = true,
+                // BaseAddress = "https://api.binance.com",
+                BaseAddress = "https://testnet.binance.vision", // For testing on Binance Spot Testnet
+            }
         });
     }
 
@@ -80,6 +89,17 @@ public class BinanceBroker : IBrokerClient
         return RoundQuantity(symbol, quantity);
     }
 
+    public async Task<(decimal StopPrice, decimal LimitPrice)> NormalizeOcoPricesAsync(
+        string symbol, decimal stopPrice, decimal limitPrice)
+    {
+        if (stopPrice <= 0 || limitPrice <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(stopPrice), "OCO stop and limit prices must be greater than zero.");
+
+        await EnsureFiltersLoadedAsync(symbol);
+        return (RoundPriceUp(symbol, stopPrice), RoundPriceDown(symbol, limitPrice));
+    }
+
     private async Task EnsureFiltersLoadedAsync(string symbol)
     {
         if (!_filters.ContainsKey(symbol))
@@ -98,6 +118,24 @@ public class BinanceBroker : IBrokerClient
 
         var steps = Math.Floor(quantity / filter.StepSize);
         return steps * filter.StepSize;
+    }
+
+    private decimal RoundPriceDown(string symbol, decimal price)
+    {
+        if (!_filters.TryGetValue(symbol, out var filter) || filter.TickSize <= 0)
+            throw new InvalidOperationException(
+                $"Exchange price tick for {symbol} is unavailable.");
+
+        return Math.Floor(price / filter.TickSize) * filter.TickSize;
+    }
+
+    private decimal RoundPriceUp(string symbol, decimal price)
+    {
+        if (!_filters.TryGetValue(symbol, out var filter) || filter.TickSize <= 0)
+            throw new InvalidOperationException(
+                $"Exchange price tick for {symbol} is unavailable.");
+
+        return Math.Ceiling(price / filter.TickSize) * filter.TickSize;
     }
 
     private void ValidateNotional(string symbol, decimal quantity, decimal price)
@@ -181,6 +219,260 @@ public class BinanceBroker : IBrokerClient
             return 0m;
         }
     }
+
+    public async Task<List<Trade>> GetOpenExchangePositionsAsync()
+    {
+        var trades = new List<Trade>();
+        try
+        {
+            using var client = CreateClient();
+
+            var ocoResult = await client.SpotApi.Trading.GetOpenOcoOrdersAsync();
+            if (!ocoResult.Success)
+            {
+                _logger.LogError(
+                    "Failed to fetch open OCO orders during reconciliation: {Error}",
+                    ocoResult.Error?.Message);
+                return trades;
+            }
+
+            var botOcoOrders = ocoResult.Data
+                .Where(order => order.ListClientOrderId.StartsWith(
+                    BotOcoClientOrderIdPrefix, StringComparison.Ordinal))
+                .ToList();
+            if (botOcoOrders.Count == 0)
+                return trades;
+
+            var openOrdersResult = await client.SpotApi.Trading.GetOpenOrdersAsync();
+            if (!openOrdersResult.Success)
+            {
+                _logger.LogError(
+                    "Failed to fetch open orders during reconciliation: {Error}",
+                    openOrdersResult.Error?.Message);
+                return trades;
+            }
+
+            foreach (var ocoOrder in botOcoOrders)
+            {
+                var orderLegs = openOrdersResult.Data
+                    .Where(order => order.OrderListId == ocoOrder.Id &&
+                        order.Side == OrderSide.Sell)
+                    .ToList();
+                if (orderLegs.Count == 0)
+                {
+                    _logger.LogWarning(
+                        "Bot OCO list {ClientOrderId} has no open sell legs",
+                        ocoOrder.ListClientOrderId);
+                    continue;
+                }
+
+                var quantity = orderLegs.Min(order => order.QuantityRemaining);
+                if (quantity <= 0)
+                    continue;
+
+                var currentPrice = await GetCurrentPriceAsync(ocoOrder.Symbol);
+                if (currentPrice <= 0)
+                {
+                    _logger.LogError(
+                        "Skipping reconciliation for {Symbol}: current price is unavailable",
+                        ocoOrder.Symbol);
+                    continue;
+                }
+
+                var stopLoss = orderLegs
+                    .FirstOrDefault(order => order.StopPrice > 0)?.StopPrice;
+                var takeProfit = orderLegs
+                    .FirstOrDefault(order => order.StopPrice <= 0 && order.Price > 0)?.Price;
+
+                trades.Add(new Trade
+                {
+                    Symbol = ocoOrder.Symbol,
+                    Type = TradeType.Buy,
+                    Quantity = quantity,
+                    EntryPrice = currentPrice,
+                    TotalValue = quantity * currentPrice,
+                    StopLoss = stopLoss,
+                    TakeProfit = takeProfit,
+                    Status = TradeStatus.Executed,
+                    ExecutedAt = ocoOrder.TransactionTime,
+                    Notes = $"OCO_CLIENT:{ocoOrder.ListClientOrderId} | " +
+                        $"Binance OCO {ocoOrder.Id}; entry price estimated at reconciliation"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reconcile open positions from Binance");
+        }
+
+        return trades;
+    }
+
+    public async Task<string> PlaceOcoOrderAsync(
+        string symbol, string side, decimal quantity,
+        decimal stopPrice, decimal limitPrice)
+    {
+        EnsureLiveOrdersAreEnabled();
+
+        if (ParseOrderSide(side) != OrderSide.Sell)
+            throw new InvalidOperationException(
+                "OCO protection for a long Spot position must use the SELL side.");
+        if (quantity <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(quantity), "Order quantity must be greater than zero.");
+        if (stopPrice <= 0 || limitPrice <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(stopPrice), "OCO stop and limit prices must be greater than zero.");
+
+        await EnsureFiltersLoadedAsync(symbol);
+        var roundedQuantity = RoundQuantity(symbol, quantity);
+        if (roundedQuantity != quantity)
+            throw new InvalidOperationException(
+                $"OCO quantity for {symbol} is not aligned with the exchange step size; " +
+                $"rounded-down quantity would be {roundedQuantity}.");
+
+        (stopPrice, limitPrice) =
+            await NormalizeOcoPricesAsync(symbol, stopPrice, limitPrice);
+
+        var currentPrice = await GetCurrentPriceAsync(symbol);
+        if (currentPrice <= 0)
+            throw new InvalidOperationException(
+                $"Could not determine a valid current price for {symbol}.");
+        if (stopPrice >= currentPrice || limitPrice <= currentPrice ||
+            stopPrice >= limitPrice)
+        {
+            throw new InvalidOperationException(
+                $"For a SELL OCO on {symbol}, stop price must be below current price " +
+                "and limit price must be above it.");
+        }
+
+        ValidateNotional(symbol, quantity, currentPrice);
+        var stopLimitPrice = RoundPriceDown(symbol, stopPrice * 0.999m);
+        if (stopLimitPrice <= 0 || stopLimitPrice >= stopPrice)
+        {
+            throw new InvalidOperationException(
+                $"Could not derive a valid stop-limit price for {symbol}.");
+        }
+
+        var listClientOrderId =
+            $"{BotOcoClientOrderIdPrefix}{Guid.NewGuid():N}";
+
+        await _rateLimiter.WaitAsync();
+        try
+        {
+            using var client = CreateClient();
+            Exception placementError;
+            var outcomeUnknown = true;
+
+            try
+            {
+                var result = await client.SpotApi.Trading.PlaceOcoOrderAsync(
+                    symbol,
+                    OrderSide.Sell,
+                    quantity,
+                    price: limitPrice,
+                    stopPrice: stopPrice,
+                    stopLimitPrice: stopLimitPrice,
+                    stopLimitTimeInForce: TimeInForce.GoodTillCanceled,
+                    listClientOrderId: listClientOrderId);
+
+                if (result.Success)
+                {
+                    if (result.Data.ListStatusType == ListStatusType.Done)
+                    {
+                        throw new OcoPlacementOutcomeUnknownException(
+                            listClientOrderId,
+                            $"Binance OCO {listClientOrderId} completed before the trade could be reconciled.");
+                    }
+
+                    return listClientOrderId;
+                }
+
+                placementError = new InvalidOperationException(
+                    $"Binance rejected the OCO order: {result.Error?.Message}");
+                outcomeUnknown = result.Error?.Code is null or -1006 or -1007;
+            }
+            catch (OcoPlacementOutcomeUnknownException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                placementError = ex;
+            }
+
+            var reconciledClientOrderId = await ReconcileOcoPlacementAsync(
+                client, listClientOrderId, placementError);
+            if (reconciledClientOrderId != null)
+            {
+                _logger.LogWarning(
+                    "Recovered Binance OCO {ClientOrderId} after an uncertain placement response",
+                    listClientOrderId);
+                return reconciledClientOrderId;
+            }
+
+            if (outcomeUnknown)
+            {
+                throw new OcoPlacementOutcomeUnknownException(
+                    listClientOrderId,
+                    $"Could not confirm whether Binance accepted OCO {listClientOrderId}.",
+                    placementError);
+            }
+
+            throw new InvalidOperationException(
+                $"Binance rejected the OCO order: {placementError.Message}",
+                placementError);
+        }
+        finally
+        {
+            _rateLimiter.Release();
+        }
+    }
+
+    private async Task<string?> ReconcileOcoPlacementAsync(
+        BinanceClient client, string listClientOrderId, Exception placementError)
+    {
+        try
+        {
+            var result = await client.SpotApi.Trading.GetOcoOrderAsync(
+                listClientOrderId: listClientOrderId);
+            if (result.Success)
+            {
+                if (result.Data.ListStatusType == ListStatusType.Done)
+                {
+                    throw new OcoPlacementOutcomeUnknownException(
+                        listClientOrderId,
+                        $"Binance OCO {listClientOrderId} completed before the trade could be reconciled.",
+                        placementError);
+                }
+
+                return listClientOrderId;
+            }
+
+            if (result.Error?.Code == -2013)
+                return null;
+
+            throw new OcoPlacementOutcomeUnknownException(
+                listClientOrderId,
+                $"Could not determine the status of Binance OCO {listClientOrderId}: " +
+                $"{result.Error?.Message}",
+                placementError);
+        }
+        catch (OcoPlacementOutcomeUnknownException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new OcoPlacementOutcomeUnknownException(
+                listClientOrderId,
+                $"Could not determine the status of Binance OCO {listClientOrderId}.",
+                new AggregateException(placementError, ex));
+        }
+    }
+
+    public Task SyncOpenTradesAsync(AppDbContext db, ILogger logger) =>
+        Task.CompletedTask;
 
     public Task<string> PlaceMarketOrderAsync(
         string symbol,

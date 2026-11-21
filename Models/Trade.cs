@@ -51,10 +51,10 @@ namespace TradingBot.Models
         [Column(TypeName = "decimal(18,8)")]
         public decimal Quantity { get; set; }
 
-        [Column(TypeName = "decimal(18,2)")]
+        [Column(TypeName = "decimal(18,8)")]
         public decimal? StopLoss { get; set; }
 
-        [Column(TypeName = "decimal(18,2)")]
+        [Column(TypeName = "decimal(18,8)")]
         public decimal? TakeProfit { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
