@@ -216,7 +216,7 @@ namespace Trading_Bot_Website.Migrations
                             Id = 1,
                             CurrentBalance = 1000000m,
                             InitialBalance = 1000000m,
-                            LastUpdated = new DateTime(2026, 11, 21, 8, 4, 15, 949, DateTimeKind.Utc).AddTicks(6538),
+                            LastUpdated = new DateTime(2026, 11, 21, 9, 7, 4, 306, DateTimeKind.Utc).AddTicks(4793),
                             LosingTrades = 0,
                             MaxDrawdown = 0m,
                             RealizedPnL = 0m,
@@ -258,6 +258,9 @@ namespace Trading_Bot_Website.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime>("CandleTimestamp")
+                        .HasColumnType("TEXT");
+
                     b.Property<double>("Confidence")
                         .HasColumnType("REAL");
 
@@ -298,7 +301,8 @@ namespace Trading_Bot_Website.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Symbol", "GeneratedAt");
+                    b.HasIndex("Symbol", "Source", "CandleTimestamp")
+                        .IsUnique();
 
                     b.ToTable("Signals");
                 });
@@ -375,7 +379,7 @@ namespace Trading_Bot_Website.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2026, 11, 21, 8, 4, 15, 949, DateTimeKind.Utc).AddTicks(6730),
+                            CreatedAt = new DateTime(2026, 11, 21, 9, 7, 4, 306, DateTimeKind.Utc).AddTicks(4981),
                             Description = "Buy when SMA20 crosses above SMA50, sell when it crosses below",
                             LosingTrades = 0,
                             MaxDrawdown = 0m,
@@ -395,7 +399,7 @@ namespace Trading_Bot_Website.Migrations
                         new
                         {
                             Id = 2,
-                            CreatedAt = new DateTime(2026, 11, 21, 8, 4, 15, 949, DateTimeKind.Utc).AddTicks(6738),
+                            CreatedAt = new DateTime(2026, 11, 21, 9, 7, 4, 306, DateTimeKind.Utc).AddTicks(5082),
                             Description = "Buy when RSI < 30, sell when RSI > 70",
                             LosingTrades = 0,
                             MaxDrawdown = 0m,
@@ -415,7 +419,7 @@ namespace Trading_Bot_Website.Migrations
                         new
                         {
                             Id = 3,
-                            CreatedAt = new DateTime(2026, 11, 21, 8, 4, 15, 949, DateTimeKind.Utc).AddTicks(6793),
+                            CreatedAt = new DateTime(2026, 11, 21, 9, 7, 4, 306, DateTimeKind.Utc).AddTicks(5086),
                             Description = "Buy/sell on MACD line crossing signal line",
                             LosingTrades = 0,
                             MaxDrawdown = 0m,

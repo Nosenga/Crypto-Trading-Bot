@@ -45,5 +45,8 @@ namespace TradingBot.Models
         public bool IsExecuted { get; set; }
         public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
         public DateTime? ExpiresAt { get; set; }
+
+        // Phase 2d: Prevent duplicate signals on the same candle
+        public DateTime CandleTimestamp { get; set; }
     }
 }
