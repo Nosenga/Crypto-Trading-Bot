@@ -29,7 +29,8 @@ namespace TradingBot.Data
                 .HasIndex(t => new { t.Symbol, t.Status });
 
             modelBuilder.Entity<Signal>()
-                .HasIndex(s => new { s.Symbol, s.GeneratedAt });
+                .HasIndex(s => new { s.Symbol, s.Source, s.CandleTimestamp })
+                .IsUnique();
 
             // Seed default portfolio
             modelBuilder.Entity<Portfolio>().HasData(

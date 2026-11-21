@@ -24,8 +24,9 @@ namespace TradingBot.Services
         {
             var signals = new List<Signal>();
 
+            // Phase 2c: Only fetch closed candles
             var data = await _context.MarketData
-                .Where(m => m.Symbol == symbol)
+                .Where(m => m.Symbol == symbol && m.IsClosed == true) // <--- The CRITICAL FIX
                 .OrderByDescending(m => m.Timestamp)
                 .Take(100)
                 .ToListAsync();
@@ -54,11 +55,27 @@ namespace TradingBot.Services
             // Save signals
             if (signals.Any())
             {
-                _context.Signals.AddRange(signals);
-                await _context.SaveChangesAsync();
-                _logger.LogInformation(
-                    "Generated {Count} signals for {Symbol}",
-                    signals.Count, symbol);
+                var validSignals = new List<Signal>();
+                foreach (var signal in signals)
+                {
+                    var exists = await _context.Signals.AnyAsync(s =>
+                        s.Symbol == signal.Symbol &&
+                        s.Source == signal.Source &&
+                        s.Type == signal.Type &&
+                        s.CandleTimestamp == signal.CandleTimestamp);
+
+                    if (!exists)
+                        validSignals.Add(signal);
+                }
+
+                if (validSignals.Any())
+                {
+                    _context.Signals.AddRange(validSignals);
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "Generated {Count} new signals for {Symbol} (Filtered duplicates)",
+                        validSignals.Count, symbol);
+                }
             }
 
             return signals;
@@ -84,7 +101,8 @@ namespace TradingBot.Services
                         Price = latest.Close,
                         Confidence = 72,
                         Source = "MA Crossover",
-                        Reason = "Golden Cross: SMA20 crossed above SMA50"
+                        Reason = "Golden Cross: SMA20 crossed above SMA50",
+                        CandleTimestamp = latest.Timestamp
                     };
                 }
 
@@ -99,7 +117,8 @@ namespace TradingBot.Services
                         Price = latest.Close,
                         Confidence = 70,
                         Source = "MA Crossover",
-                        Reason = "Death Cross: SMA20 crossed below SMA50"
+                        Reason = "Death Cross: SMA20 crossed below SMA50",
+                        CandleTimestamp = latest.Timestamp
                     };
                 }
             }
@@ -130,7 +149,8 @@ namespace TradingBot.Services
                     Price = latest.Close,
                     Confidence = confidence,
                     Source = "RSI",
-                    Reason = $"RSI oversold at {currentRSI:F1}"
+                    Reason = $"RSI oversold at {currentRSI:F1}",
+                    CandleTimestamp = latest.Timestamp
                 };
             }
 
@@ -146,7 +166,8 @@ namespace TradingBot.Services
                     Price = latest.Close,
                     Confidence = confidence,
                     Source = "RSI",
-                    Reason = $"RSI overbought at {currentRSI:F1}"
+                    Reason = $"RSI overbought at {currentRSI:F1}",
+                    CandleTimestamp = latest.Timestamp
                 };
             }
 
@@ -171,7 +192,8 @@ namespace TradingBot.Services
                         Price = latest.Close,
                         Confidence = 68,
                         Source = "MACD",
-                        Reason = "MACD crossed above zero line"
+                        Reason = "MACD crossed above zero line",
+                        CandleTimestamp = latest.Timestamp
                     };
                 }
 
@@ -185,7 +207,8 @@ namespace TradingBot.Services
                         Price = latest.Close,
                         Confidence = 68,
                         Source = "MACD",
-                        Reason = "MACD crossed below zero line"
+                        Reason = "MACD crossed below zero line",
+                        CandleTimestamp = latest.Timestamp
                     };
                 }
             }
@@ -207,7 +230,8 @@ namespace TradingBot.Services
                     Price = latest.Close,
                     Confidence = 65,
                     Source = "Bollinger Bands",
-                    Reason = "Price touched lower Bollinger Band"
+                    Reason = "Price touched lower Bollinger Band",
+                    CandleTimestamp = latest.Timestamp
                 };
             }
 
@@ -220,7 +244,8 @@ namespace TradingBot.Services
                     Price = latest.Close,
                     Confidence = 65,
                     Source = "Bollinger Bands",
-                    Reason = "Price touched upper Bollinger Band"
+                    Reason = "Price touched upper Bollinger Band",
+                    CandleTimestamp = latest.Timestamp
                 };
             }
 
