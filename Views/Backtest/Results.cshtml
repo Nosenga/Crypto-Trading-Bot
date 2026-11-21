@@ -1,0 +1,186 @@
+<!-- Views/Backtest/Results.cshtml -->
+@model TradingBot.Models.BacktestResult
+@using TradingBot.Models
+@{
+    ViewData["Title"] = "Backtest Results";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 style="font-weight: 700;">📈 Backtest Results</h2>
+        <p class="text-muted mb-0">
+            Performance summary for <strong>@Model.StrategyName</strong>
+        </p>
+    </div>
+    <div>
+        <a asp-action="Index" asp-controller="Backtest"
+           class="btn btn-outline-secondary px-3 py-2">
+            <i class="fas fa-arrow-left me-2"></i> Back to Backtest
+        </a>
+    </div>
+<!-- Key Metrics Row -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-3 col-md-6">
+        <div class="card-trading">
+            <div class="card-header">
+                <i class="fas fa-percentage"></i> Total Return
+            </div>
+            <div class="card-body text-center py-4">
+                <div class="@(Model.TotalReturn >= 0 ? "positive" : "negative") fw-bold fs-4">
+                    @Model.TotalReturnPercent.ToString("F2")%
+                </div>
+                <small class="text-muted d-block mt-1">
+                    $@Model.InitialCapital.ToString("N2") → $@Model.FinalCapital.ToString("N2")
+                </small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="card-trading">
+            <div class="card-header">
+                <i class="fas fa-bullseye"></i> Win Rate
+            </div>
+            <div class="card-body text-center py-4">
+                <div class="fw-bold fs-4 text-primary">
+                    @Model.WinRate.ToString("F1")%
+                </div>
+                <small class="text-muted d-block mt-1">
+                    <span class="positive">@Model.WinningTrades won</span> /
+                    <span class="negative">@Model.LosingTrades lost</span>
+                </small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="card-trading">
+            <div class="card-header">
+                <i class="fas fa-chart-line"></i> Max Drawdown
+            </div>
+            <div class="card-body text-center py-4">
+                <div class="fw-bold fs-4 negative">
+                    @Model.MaxDrawdownPercent.ToString("F1")%
+                </div>
+                <small class="text-muted d-block mt-1">
+                    @Model.TotalTrades total trades
+                </small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="card-trading">
+            <div class="card-header">
+                <i class="fas fa-calendar-alt"></i> Period
+            </div>
+            <div class="card-body text-center py-4">
+                <div class="fw-bold fs-5">
+                    @Model.StartDate.ToString("MMM dd") — @Model.EndDate.ToString("MMM dd, yyyy")
+                </div>
+                <small class="text-muted d-block mt-1">
+                    @Model.Symbol
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+<!-- Detailed Stats -->
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card-trading">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-table"></i> Detailed Metrics</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-trading table-sm mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-muted">Annualized Return</td>
+                            <td class="text-end fw-bold">
+                                @Model.AnnualizedReturn.ToString("F2")%
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Sharpe Ratio</td>
+                            <td class="text-end fw-bold">
+                                @Model.SharpeRatio.ToString("F2")
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Total Trades</td>
+                            <td class="text-end fw-bold">
+                                @Model.TotalTrades
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Winning / Losing</td>
+                            <td class="text-end">
+                                <span class="positive">@Model.WinningTrades</span> /
+                                <span class="negative">@Model.LosingTrades</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Largest Win</td>
+                            <td class="text-end positive fw-bold">
+                                $@Model.LargestWin.ToString("N2")
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Largest Loss</td>
+                            <td class="text-end negative fw-bold">
+                                $@Model.LargestLoss.ToString("N2")
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Average Win</td>
+                            <td class="text-end positive">
+                                $@Model.AverageWin.ToString("N2")
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Average Loss</td>
+                            <td class="text-end negative">
+                                $@Model.AverageLoss.ToString("N2")
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card-trading">
+            <div class="card-header">
+                <i class="fas fa-info-circle"></i> Strategy Info
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label text-muted small d-block">Strategy</label>
+                    <div class="fw-bold">@Model.StrategyName</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small d-block">Symbol</label>
+                    <div class="fw-bold">@Model.Symbol</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small d-block">Initial Capital</label>
+                    <div class="fw-bold">$@Model.InitialCapital.ToString("N2")</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small d-block">Final Capital</label>
+                    <div class="fw-bold">$@Model.FinalCapital.ToString("N2")</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small d-block">Completed At</label>
+                    <div class="text-muted small">@Model.CreatedAt.ToString("MMMM dd, yyyy hh:mm tt")</div>
+                </div>
+                <div class="d-grid mt-3">
+                    <a asp-action="Index" asp-controller="Backtest"
+                       class="btn btn-primary py-2">
+                        <i class="fas fa-arrow-left me-2"></i> Run Another Backtest
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
