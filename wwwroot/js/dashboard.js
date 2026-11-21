@@ -7,8 +7,8 @@ document.addEventListener('DOMContentLoaded', function () {
         .build();
 
     connection.start()
-        .then(() => console.log('SignalR connected'))
-        .catch(err => console.error('SignalR error:', err));
+        .then(() => console.log("[SignalR] Connected successfully!"))
+        .catch(err => console.error("[SignalR] Connection failed: ", err));
 
     // Listen for market updates
     connection.on('MarketUpdate', function (prices) {
