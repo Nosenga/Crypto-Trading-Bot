@@ -30,6 +30,11 @@ namespace TradingBot.Models
 
         public DateTime Timestamp { get; set; }
 
+        // Phase 2c: Track if the candle is finalized (closed)
+        public DateTime CloseTime { get; set; }
+
+        public bool IsClosed { get; set; } = false;
+
         // Technical indicators
         [Column(TypeName = "decimal(18,8)")]
         public decimal? SMA20 { get; set; }

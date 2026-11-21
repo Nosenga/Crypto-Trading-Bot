@@ -24,8 +24,9 @@ namespace TradingBot.Services
         {
             var signals = new List<Signal>();
 
+            // Phase 2c: Only fetch closed candles
             var data = await _context.MarketData
-                .Where(m => m.Symbol == symbol)
+                .Where(m => m.Symbol == symbol && m.IsClosed == true) // <--- The CRITICAL FIX
                 .OrderByDescending(m => m.Timestamp)
                 .Take(100)
                 .ToListAsync();

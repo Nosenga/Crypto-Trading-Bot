@@ -147,6 +147,10 @@ namespace TradingBot.Services
                     match.Low = candle.Low;
                     match.Close = candle.Close;
                     match.Volume = candle.Volume;
+
+                    // Phase 2c: Update the closed status
+                    match.CloseTime = candle.CloseTime;
+                    match.IsClosed = candle.IsClosed;
                 }
                 else
                 {

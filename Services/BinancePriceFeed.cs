@@ -110,7 +110,11 @@ namespace TradingBot.Services
                     Low = k.LowPrice,
                     Close = k.ClosePrice,
                     Volume = k.Volume,
-                    Timestamp = k.OpenTime
+                    Timestamp = k.OpenTime,
+
+                    //Phase 2c: Populate the new fields
+                    CloseTime = k.CloseTime,
+                    IsClosed = k.CloseTime <= DateTime.UtcNow,
                 }).ToList();
             }
             catch (Exception ex)
