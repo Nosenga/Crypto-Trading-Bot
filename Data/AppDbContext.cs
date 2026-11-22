@@ -42,6 +42,7 @@ namespace TradingBot.Data
                     TotalEquity = 1000000m, // Phase 1: was 100000m — factor-of-10 typo
                     HighWaterMark = 1000000m,
                     StartOfDayBalance = 1000000m,
+                    StartOfDayEquity = 1000000m,
                     LastRiskCheckDate = new DateTime(2026, 11, 21, 0, 0, 0, DateTimeKind.Utc),
                     LastUpdated = new DateTime(2026, 11, 21, 13, 14, 11, 229, DateTimeKind.Utc)
                         .AddTicks(5018)

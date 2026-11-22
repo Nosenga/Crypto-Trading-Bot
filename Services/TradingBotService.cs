@@ -9,6 +9,7 @@ namespace TradingBot.Services
     public class TradingBotService : ITradingBotService
     {
         private const string ShadowModeTradeMarker = "SHADOW_MODE";
+        private static readonly SemaphoreSlim _tradeLock = new(1, 1);
 
         private readonly AppDbContext _context;
         private readonly IMarketDataService _marketDataService;
@@ -39,6 +40,24 @@ namespace TradingBot.Services
             string? strategy = null, decimal? stopLoss = null,
             decimal? takeProfit = null, double confidence = 80,
             string? signalSource = null)
+        {
+            await _tradeLock.WaitAsync();
+            try
+            {
+                return await ExecuteTradeCoreAsync(
+                    symbol, type, quantity, strategy, stopLoss, takeProfit,
+                    confidence, signalSource);
+            }
+            finally
+            {
+                _tradeLock.Release();
+            }
+        }
+
+        private async Task<Trade> ExecuteTradeCoreAsync(
+            string symbol, TradeType type, decimal quantity,
+            string? strategy, decimal? stopLoss, decimal? takeProfit,
+            double confidence, string? signalSource)
         {
             // Kill switch blocks all order paths, including manual trades.
             if (_safety.IsKillSwitchActive)
@@ -100,12 +119,31 @@ namespace TradingBot.Services
                     "Insufficient balance (including fees)");
             }
 
-            // 2. Send the order only when the operator has armed trading.
-            string? brokerOrderId = null;
+            // Persist a pending record before sending an order so a process
+            // failure cannot leave an exchange position with no local record.
             var isShadowTrade = !_safety.IsArmed;
+            var trade = new Trade
+            {
+                Symbol = symbol,
+                Type = type,
+                EntryPrice = currentPrice,
+                Quantity = quantity,
+                TotalValue = totalCost,
+                StopLoss = stopLoss,
+                TakeProfit = takeProfit,
+                Strategy = strategy,
+                Status = TradeStatus.Pending,
+                ExecutedAt = DateTime.UtcNow,
+                Confidence = confidence,
+                SignalSource = signalSource,
+                Notes = isShadowTrade ? ShadowModeTradeMarker : "PENDING"
+            };
+
+            _context.Trades.Add(trade);
+            await _context.SaveChangesAsync();
+
             if (isShadowTrade)
             {
-                brokerOrderId = ShadowModeTradeMarker;
                 _logger.LogInformation(
                     "[Shadow Mode] Would have bought {Quantity} {Symbol}",
                     quantity, symbol);
@@ -114,43 +152,34 @@ namespace TradingBot.Services
             {
                 try
                 {
-                    brokerOrderId = await _brokerClient.PlaceMarketOrderAsync(
+                    var brokerOrderId = await _brokerClient.PlaceMarketOrderAsync(
                         symbol, "BUY", quantity);
+                    trade.Notes = brokerOrderId;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Broker rejected the order for {Symbol}", symbol);
+                    trade.Notes = $"PENDING_RECONCILIATION: {ex.Message}";
+                    await _context.SaveChangesAsync();
+                    _logger.LogCritical(
+                        ex,
+                        "Could not confirm market order outcome for pending trade #{TradeId} {Symbol}",
+                        trade.Id,
+                        symbol);
                     throw new InvalidOperationException(
-                        $"Broker rejected the order: {ex.Message}");
+                        "The broker order outcome is uncertain. The trade remains pending and " +
+                        "must be reconciled before retrying.",
+                        ex);
                 }
             }
 
-            // In shadow mode, persist a simulated position without placing a
-            // broker order. The marker also keeps its later close simulated.
-            var trade = new Trade
-            {
-                Symbol = symbol,
-                Type = type,
-                EntryPrice = currentPrice,
-                Quantity = quantity,
-                Fees = entryFee,
-                TotalValue = totalCost,
-                StopLoss = stopLoss,
-                TakeProfit = takeProfit,
-                Strategy = strategy,
-                Status = TradeStatus.Executed,
-                ExecutedAt = DateTime.UtcNow,
-                Confidence = confidence,
-                SignalSource = signalSource,
-                Notes = brokerOrderId // Store the exchange's Order ID here
-            };
+            trade.Fees = entryFee;
+            trade.Status = TradeStatus.Executed;
 
             // CurrentBalance is actual cash; realized P&L is reported
             // separately but is already reflected in cash after a close.
             portfolio.CurrentBalance -= totalCost + entryFee;
 
             portfolio.LastUpdated = DateTime.UtcNow;
-            _context.Trades.Add(trade);
             await _context.SaveChangesAsync();
 
             if (!isShadowTrade && stopLoss is > 0 && takeProfit is > 0)
@@ -186,7 +215,7 @@ namespace TradingBot.Services
 
                     try
                     {
-                        var closedTrade = await CloseTradeAsync(trade.Id);
+                        var closedTrade = await CloseTradeCoreAsync(trade.Id);
                         if (closedTrade == null)
                         {
                             throw new InvalidOperationException(
@@ -230,6 +259,19 @@ namespace TradingBot.Services
 
         public async Task<Trade?> CloseTradeAsync(int tradeId)
         {
+            await _tradeLock.WaitAsync();
+            try
+            {
+                return await CloseTradeCoreAsync(tradeId);
+            }
+            finally
+            {
+                _tradeLock.Release();
+            }
+        }
+
+        private async Task<Trade?> CloseTradeCoreAsync(int tradeId)
+        {
             var trade = await _context.Trades.FindAsync(tradeId);
             if (trade == null || trade.Status != TradeStatus.Executed)
                 return null;
@@ -254,6 +296,24 @@ namespace TradingBot.Services
             }
 
             var closeSide = trade.Type == TradeType.Buy ? "SELL" : "BUY";
+            var ocoMatch = System.Text.RegularExpressions.Regex.Match(
+                trade.Notes ?? string.Empty,
+                @"OCO_CLIENT:([^| ]+)|OCO:\s*(\d+)");
+            if (ocoMatch.Success)
+            {
+                var ocoId = ocoMatch.Groups[1].Success
+                    ? ocoMatch.Groups[1].Value
+                    : ocoMatch.Groups[2].Value;
+                var cancelled = await _brokerClient.CancelOcoAsync(
+                    trade.Symbol, ocoId);
+                if (!cancelled)
+                {
+                    _logger.LogWarning(
+                        "Failed to cancel OCO {Id} for trade #{TradeId}. Proceeding may fail.",
+                        ocoId, trade.Id);
+                }
+            }
+
             string? closeOrderId;
             var isShadowTrade = trade.Notes?.StartsWith(
                 ShadowModeTradeMarker, StringComparison.Ordinal) == true;
@@ -429,7 +489,7 @@ namespace TradingBot.Services
         {
             var now = DateTime.UtcNow;
             if (portfolio.LastRiskCheckDate.Date < now.Date)
-                portfolio.StartOfDayBalance = portfolio.CurrentBalance;
+                portfolio.StartOfDayEquity = portfolio.TotalEquity;
 
             portfolio.LastRiskCheckDate = now;
             _safety.UpdateHighWaterMark(portfolio);
@@ -439,18 +499,18 @@ namespace TradingBot.Services
             var maxDrawdownLimitPercent = _configuration.GetValue<decimal>(
                 "TradingBot:RiskManagement:MaxDrawdownLimitPercent", 10m);
 
-            var dailyLossThreshold = portfolio.StartOfDayBalance *
-                (1 - dailyLossLimitPercent / 100);
-            if (portfolio.StartOfDayBalance > 0 &&
-                portfolio.CurrentBalance < dailyLossThreshold)
+            if (portfolio.StartOfDayEquity > 0)
             {
-                if (!_safety.IsKillSwitchActive)
+                var lossPercent =
+                    (portfolio.StartOfDayEquity - portfolio.TotalEquity) /
+                    portfolio.StartOfDayEquity * 100;
+                if (lossPercent >= dailyLossLimitPercent &&
+                    !_safety.IsKillSwitchActive)
                 {
                     _safety.ActivateKillSwitch("Daily Loss Limit Hit");
                     _logger.LogCritical(
                         "Kill switch activated: Daily Loss Limit Hit");
                 }
-                return;
             }
 
             var drawdownThreshold = portfolio.HighWaterMark *

@@ -474,6 +474,41 @@ public class BinanceBroker : IBrokerClient
     public Task SyncOpenTradesAsync(AppDbContext db, ILogger logger) =>
         Task.CompletedTask;
 
+    public async Task<bool> CancelOcoAsync(
+        string symbol, string listClientOrderId)
+    {
+        await _rateLimiter.WaitAsync();
+        try
+        {
+            using var client = CreateClient();
+            var result = long.TryParse(listClientOrderId, out var orderListId)
+                ? await client.SpotApi.Trading.CancelOcoOrderAsync(
+                    symbol, orderListId: orderListId)
+                : await client.SpotApi.Trading.CancelOcoOrderAsync(
+                    symbol, listClientOrderId: listClientOrderId);
+
+            if (!result.Success)
+            {
+                _logger.LogWarning(
+                    "Failed to cancel OCO {Id}: {Error}",
+                    listClientOrderId, result.Error?.Message);
+                return false;
+            }
+
+            _logger.LogInformation("Successfully cancelled OCO {Id}", listClientOrderId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception cancelling OCO {Id}", listClientOrderId);
+            return false;
+        }
+        finally
+        {
+            _rateLimiter.Release();
+        }
+    }
+
     public Task<string> PlaceMarketOrderAsync(
         string symbol,
         string side,
@@ -495,10 +530,6 @@ public class BinanceBroker : IBrokerClient
         bool allowWhenKillSwitchActive)
     {
         EnsureLiveOrdersAreEnabled();
-
-        if (_safety.IsKillSwitchActive && !allowWhenKillSwitchActive)
-            throw new InvalidOperationException(
-                $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
 
         if (quantity <= 0)
             throw new ArgumentOutOfRangeException(
@@ -544,6 +575,10 @@ public class BinanceBroker : IBrokerClient
 
         try
         {
+            if (_safety.IsKillSwitchActive && !allowWhenKillSwitchActive)
+                throw new InvalidOperationException(
+                    $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
+
             using var client = CreateClient();
 
             // Binance.Net v8.6.0 order is: symbol, side, type.
