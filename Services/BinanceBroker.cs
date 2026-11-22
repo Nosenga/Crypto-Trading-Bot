@@ -19,6 +19,7 @@ public class BinanceBroker : IBrokerClient
     private readonly string _apiKey;
     private readonly string _apiSecret;
     private readonly bool _enableLiveOrders;
+    private readonly bool _useTestnet;
     private readonly ISafetyService _safety;
     private readonly IPriceFeed _priceFeed;
     private readonly ConcurrentDictionary<string, (decimal StepSize, decimal MinNotional, decimal TickSize)> _filters =
@@ -52,6 +53,8 @@ public class BinanceBroker : IBrokerClient
 
         _enableLiveOrders = configuration.GetValue<bool>(
             "TradingBot:Binance:EnableLiveOrders");
+        _useTestnet = configuration.GetValue<bool>(
+            "TradingBot:Binance:UseTestnet", true);
     }
 
     private BinanceClient CreateClient()
@@ -62,8 +65,9 @@ public class BinanceBroker : IBrokerClient
             SpotApiOptions = new BinanceApiClientOptions
             {
                 AutoTimestamp = true,
-                // BaseAddress = "https://api.binance.com",
-                BaseAddress = "https://testnet.binance.vision", // For testing on Binance Spot Testnet
+                BaseAddress = _useTestnet
+                    ? "https://testnet.binance.vision"
+                    : "https://api.binance.com"
             }
         });
     }

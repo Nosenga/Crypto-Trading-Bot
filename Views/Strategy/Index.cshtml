@@ -61,9 +61,6 @@
                                     <i class="fas fa-pause"></i> @(strategy.Status == TradingBot.Models.StrategyStatus.Active ? "Pause" : "Activate")
                                 </button>
                             </form>
-                            <a asp-action="Details" asp-route-id="@strategy.Id" class="x2">
-                                <i class="fas fa-chart-bar"></i>
-                            </a>
                             <form asp-action="Delete" method="post">
                                 <input type="hidden" name="id" value="@strategy.Id" />
                                 <button type="submit" class="x2" onclick="return confirm('Delete strategy?)">

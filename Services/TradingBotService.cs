@@ -119,6 +119,25 @@ namespace TradingBot.Services
                     "Insufficient balance (including fees)");
             }
 
+            var maxPositionSize = _configuration.GetValue<decimal>(
+                "TradingBot:MaxPositionSize", 1000m);
+            if (totalCost > maxPositionSize)
+            {
+                throw new InvalidOperationException(
+                    $"Trade cost of ${totalCost} exceeds MaxPositionSize of ${maxPositionSize}.");
+            }
+
+            var maxOpenPositions = _configuration.GetValue<int>(
+                "TradingBot:MaxOpenPositions", 10);
+            var openCount = await _context.Trades.CountAsync(
+                trade => trade.Status == TradeStatus.Executed ||
+                         trade.Status == TradeStatus.Pending);
+            if (openCount >= maxOpenPositions)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot open trade. Max open positions ({maxOpenPositions}) reached.");
+            }
+
             // Persist a pending record before sending an order so a process
             // failure cannot leave an exchange position with no local record.
             var isShadowTrade = !_safety.IsArmed;
@@ -705,7 +724,7 @@ namespace TradingBot.Services
                                 signal.Confidence, signal.Source);
                             actionsTaken++;
                         }
-                        catch (InvalidOperationException ex)
+                        catch (Exception ex)
                         {
                             _logger.LogWarning(ex,
                                 "Auto-trade buy skipped for {Symbol} ({Strategy})",
@@ -729,7 +748,7 @@ namespace TradingBot.Services
                                 if (closedTrade != null)
                                     actionsTaken++;
                             }
-                            catch (InvalidOperationException ex)
+                            catch (Exception ex)
                             {
                                 _logger.LogWarning(ex,
                                     "Auto-trade exit skipped for {Symbol} ({Strategy})",
