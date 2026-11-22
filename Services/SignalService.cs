@@ -8,15 +8,18 @@ namespace TradingBot.Services
     {
         private readonly AppDbContext _context;
         private readonly IMarketDataService _marketDataService;
+        private readonly INewsService _newsService;
         private readonly ILogger<SignalService> _logger;
 
         public SignalService(
             AppDbContext context,
             IMarketDataService marketDataService,
+            INewsService newsService,
             ILogger<SignalService> logger)
         {
             _context = context;
             _marketDataService = marketDataService;
+            _newsService = newsService;
             _logger = logger;
         }
 
@@ -55,9 +58,22 @@ namespace TradingBot.Services
             // Save signals
             if (signals.Any())
             {
+                // Phase 8: News Sentiment Veto
+                var sentimentScore = await _newsService.GetCurrentMarketSentimentAsync();
                 var validSignals = new List<Signal>();
+
                 foreach (var signal in signals)
                 {
+                    if ((signal.Type == SignalType.Buy ||
+                         signal.Type == SignalType.StrongBuy) &&
+                        sentimentScore <= -0.3)
+                    {
+                        _logger.LogWarning(
+                            "VETOED Buy signal for {Symbol}. News sentiment is too bearish ({Score}).",
+                            symbol, sentimentScore);
+                        continue;
+                    }
+
                     var exists = await _context.Signals.AnyAsync(s =>
                         s.Symbol == signal.Symbol &&
                         s.Source == signal.Source &&
@@ -73,8 +89,8 @@ namespace TradingBot.Services
                     _context.Signals.AddRange(validSignals);
                     await _context.SaveChangesAsync();
                     _logger.LogInformation(
-                        "Generated {Count} new signals for {Symbol} (Filtered duplicates)",
-                        validSignals.Count, symbol);
+                        "Generated {Count} signals for {Symbol} (Sentiment: {Score:F2})",
+                        validSignals.Count, symbol, sentimentScore);
                 }
             }
 

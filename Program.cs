@@ -93,6 +93,10 @@ else
 builder.Services.AddScoped<ITradingBotService, TradingBotService>();
 builder.Services.AddScoped<ISignalService, SignalService>();
 builder.Services.AddScoped<IBacktestService, BacktestService>();
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<INewsService, NewsService>(); // Register concrete class for the background worker
+builder.Services.AddScoped<NewsService>();
+builder.Services.AddHostedService<NewsWorker>();
 
 // --- Safety Service (in-memory kill switch) ---
 builder.Services.AddSingleton<ISafetyService, SafetyService>();

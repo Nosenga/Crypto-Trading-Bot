@@ -16,6 +16,7 @@ namespace TradingBot.Data
         public DbSet<Signal> Signals { get; set; }
         public DbSet<MarketData> MarketData { get; set; }
         public DbSet<BacktestResult> BacktestResults { get; set; }
+        public DbSet<NewsSentiment> NewsSentiments { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

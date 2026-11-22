@@ -170,6 +170,34 @@ namespace Trading_Bot_Website.Migrations
                     b.ToTable("MarketData");
                 });
 
+            modelBuilder.Entity("TradingBot.Models.NewsSentiment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("FetchedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Headline")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("PublishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("Score")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("NewsSentiments");
+                });
+
             modelBuilder.Entity("TradingBot.Models.Portfolio", b =>
                 {
                     b.Property<int>("Id")
