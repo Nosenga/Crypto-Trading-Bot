@@ -533,46 +533,59 @@ public class BinanceBroker : IBrokerClient
         decimal quantity,
         bool allowWhenKillSwitchActive)
     {
-        EnsureLiveOrdersAreEnabled();
-
-        if (quantity <= 0)
-            throw new ArgumentOutOfRangeException(
-                nameof(quantity),
-                "Order quantity must be greater than zero.");
-
-        var orderSide = ParseOrderSide(side);
-
-        await EnsureFiltersLoadedAsync(symbol);
-        var roundedQuantity = RoundQuantity(symbol, quantity);
-        if (allowWhenKillSwitchActive && roundedQuantity != quantity)
-            throw new InvalidOperationException(
-                $"Order quantity for {symbol} is not aligned with the exchange step size; " +
-                $"rounded-down quantity would be {roundedQuantity}.");
-        quantity = roundedQuantity;
-        if (quantity <= 0)
-            throw new InvalidOperationException(
-                $"Quantity too small after rounding for {symbol}.");
-
-        var currentPrice = await GetCurrentPriceAsync(symbol);
-        if (currentPrice <= 0)
-            throw new InvalidOperationException(
-                $"Could not determine a valid current price for {symbol}.");
-
-        ValidateNotional(symbol, quantity, currentPrice);
-
-        // Optional pre-check for BUY orders on USDT pairs.
-        // Binance still performs the authoritative balance and trade-rule checks.
-        if (orderSide == OrderSide.Buy && symbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase))
+        OrderSide orderSide;
+        try
         {
-            var estimatedCost = quantity * currentPrice;
-            var availableUsdt = await GetAvailableBalanceAsync("USDT");
+            EnsureLiveOrdersAreEnabled();
 
-            if (availableUsdt < estimatedCost)
-            {
+            if (quantity <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(quantity),
+                    "Order quantity must be greater than zero.");
+
+            orderSide = ParseOrderSide(side);
+
+            await EnsureFiltersLoadedAsync(symbol);
+            var roundedQuantity = RoundQuantity(symbol, quantity);
+            if (allowWhenKillSwitchActive && roundedQuantity != quantity)
                 throw new InvalidOperationException(
-                    $"Insufficient USDT balance. Estimated required: {estimatedCost:F8}; " +
-                    $"available: {availableUsdt:F8}.");
+                    $"Order quantity for {symbol} is not aligned with the exchange step size; " +
+                    $"rounded-down quantity would be {roundedQuantity}.");
+            quantity = roundedQuantity;
+            if (quantity <= 0)
+                throw new InvalidOperationException(
+                    $"Quantity too small after rounding for {symbol}.");
+
+            var currentPrice = await GetCurrentPriceAsync(symbol);
+            if (currentPrice <= 0)
+                throw new InvalidOperationException(
+                    $"Could not determine a valid current price for {symbol}.");
+
+            ValidateNotional(symbol, quantity, currentPrice);
+
+            // Optional pre-check for BUY orders on USDT pairs.
+            // Binance still performs the authoritative balance and trade-rule checks.
+            if (orderSide == OrderSide.Buy && symbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase))
+            {
+                var estimatedCost = quantity * currentPrice;
+                var availableUsdt = await GetAvailableBalanceAsync("USDT");
+
+                if (availableUsdt < estimatedCost)
+                {
+                    throw new InvalidOperationException(
+                        $"Insufficient USDT balance. Estimated required: {estimatedCost:F8}; " +
+                        $"available: {availableUsdt:F8}.");
+                }
             }
+        }
+        catch (OrderRejectedException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Nothing has been sent yet, so this is a definite rejection.
+            throw new OrderRejectedException(ex.Message, ex);
         }
 
         await _rateLimiter.WaitAsync();
@@ -580,7 +593,7 @@ public class BinanceBroker : IBrokerClient
         try
         {
             if (_safety.IsKillSwitchActive && !allowWhenKillSwitchActive)
-                throw new InvalidOperationException(
+                throw new OrderRejectedException(
                     $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
 
             using var client = CreateClient();
@@ -595,12 +608,18 @@ public class BinanceBroker : IBrokerClient
             if (!result.Success)
             {
                 _logger.LogWarning(
-                    "Binance market order for {Symbol} was rejected: {Error}",
+                    "Binance market order for {Symbol} failed: {Error}",
                     symbol,
                     result.Error?.Message);
 
-                throw new InvalidOperationException(
-                    $"Binance rejected the market order: {result.Error?.Message}");
+                var message = $"Binance rejected the market order: {result.Error?.Message}";
+
+                // -1006 / -1007 (or no code at all) mean "execution status unknown".
+                // Any other error code is a definite rejection.
+                if (result.Error?.Code is null or -1006 or -1007)
+                    throw new OrderOutcomeUnknownException(message);
+
+                throw new OrderRejectedException(message);
             }
 
             var orderId = result.Data.Id.ToString();
@@ -613,6 +632,14 @@ public class BinanceBroker : IBrokerClient
                 symbol);
 
             return orderId;
+        }
+        catch (Exception ex) when (ex is not OrderRejectedException &&
+                                   ex is not OrderOutcomeUnknownException)
+        {
+            // Timeout, dropped connection, or anything unclassified once the request
+            // may have left the process: assume the order MAY exist.
+            throw new OrderOutcomeUnknownException(
+                $"Could not confirm whether the {symbol} market order was sent: {ex.Message}", ex);
         }
         finally
         {

@@ -127,29 +127,41 @@ namespace TradingBot.Services
         public async Task<string> PlaceMarketOrderAsync(
             string symbol, string side, decimal quantity)
         {
-            if (_safety.IsKillSwitchActive)
-                throw new InvalidOperationException(
-                    $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
+            try
+            {
+                if (_safety.IsKillSwitchActive)
+                    throw new InvalidOperationException(
+                        $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
 
-            if (quantity <= 0)
-                throw new ArgumentOutOfRangeException(
-                    nameof(quantity), "Order quantity must be greater than zero.");
+                if (quantity <= 0)
+                    throw new ArgumentOutOfRangeException(
+                        nameof(quantity), "Order quantity must be greater than zero.");
 
-            await EnsureFiltersLoadedAsync(symbol);
-            quantity = RoundQuantity(symbol, quantity);
-            if (quantity <= 0)
-                throw new InvalidOperationException(
-                    $"Quantity too small after rounding for {symbol}.");
+                await EnsureFiltersLoadedAsync(symbol);
+                quantity = RoundQuantity(symbol, quantity);
+                if (quantity <= 0)
+                    throw new InvalidOperationException(
+                        $"Quantity too small after rounding for {symbol}.");
 
-            var price = await GetCurrentPriceAsync(symbol);
-            if (price <= 0)
-                throw new InvalidOperationException(
-                    $"Could not determine a valid current price for {symbol}.");
+                var price = await GetCurrentPriceAsync(symbol);
+                if (price <= 0)
+                    throw new InvalidOperationException(
+                        $"Could not determine a valid current price for {symbol}.");
 
-            ValidateNotional(symbol, quantity, price);
+                ValidateNotional(symbol, quantity, price);
 
-            var orderId = Guid.NewGuid().ToString();
-            return orderId;
+                var orderId = Guid.NewGuid().ToString();
+                return orderId;
+            }
+            catch (OrderRejectedException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Paper orders never leave the process, so any failure is a rejection.
+                throw new OrderRejectedException(ex.Message, ex);
+            }
         }
 
         public async Task<string> PlaceClosingMarketOrderAsync(

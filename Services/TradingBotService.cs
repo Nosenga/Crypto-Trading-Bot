@@ -54,6 +54,9 @@ namespace TradingBot.Services
             }
         }
 
+        private static string Truncate(string s, int max = 450) =>
+            s.Length <= max ? s : s[..max];
+
         private async Task<Trade> ExecuteTradeCoreAsync(
             string symbol, TradeType type, decimal quantity,
             string? strategy, decimal? stopLoss, decimal? takeProfit,
@@ -175,9 +178,28 @@ namespace TradingBot.Services
                         symbol, "BUY", quantity);
                     trade.Notes = brokerOrderId;
                 }
+                catch (OrderRejectedException ex)
+                {
+                    // Definite rejection: nothing reached the exchange, so there is
+                    // nothing to reconcile. Cancel the row so it neither holds an
+                    // open-position slot nor lingers as "pending".
+                    trade.Status = TradeStatus.Cancelled;
+                    trade.ExecutedAt = null;
+                    trade.Notes = Truncate($"REJECTED: {ex.Message}");
+                    await _context.SaveChangesAsync();
+                    _logger.LogWarning(
+                        ex,
+                        "Broker rejected the order for trade #{TradeId} {Symbol}",
+                        trade.Id,
+                        symbol);
+                    throw new InvalidOperationException(
+                        $"Broker rejected the order: {ex.Message}", ex);
+                }
                 catch (Exception ex)
                 {
-                    trade.Notes = $"PENDING_RECONCILIATION: {ex.Message}";
+                    // Outcome unknown (timeout, lost response, or anything unclassified).
+                    // The order may exist on the exchange, so the row stays Pending.
+                    trade.Notes = Truncate($"PENDING_RECONCILIATION: {ex.Message}");
                     await _context.SaveChangesAsync();
                     _logger.LogCritical(
                         ex,

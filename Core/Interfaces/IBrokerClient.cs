@@ -48,4 +48,21 @@ namespace TradingBot.Core.Interfaces
 
         public string ClientOrderId { get; }
     }
+
+    /// <summary>The exchange definitely did NOT accept the order. Nothing to reconcile.</summary>
+    public sealed class OrderRejectedException : InvalidOperationException
+    {
+        public OrderRejectedException(string message, Exception? innerException = null)
+            : base(message, innerException) { }
+    }
+
+    /// <summary>
+    /// The order may or may not exist on the exchange (timeout, 5xx, lost response).
+    /// Callers must reconcile before assuming either outcome.
+    /// </summary>
+    public sealed class OrderOutcomeUnknownException : InvalidOperationException
+    {
+        public OrderOutcomeUnknownException(string message, Exception? innerException = null)
+            : base(message, innerException) { }
+    }
 }
