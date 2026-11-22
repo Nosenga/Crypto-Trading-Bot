@@ -65,7 +65,11 @@
                         <br />
                         <small class="mu">/USDT</small>
                     </div>
-                    <span class="price-live fw-bold" data-symbol="@price.Key">$@price.Value.ToString("N2")</span>
+                    <div class="text-end">
+                        <span class="price-live fw-bold" data-symbol="@price.Key">
+                            $@price.Value.ToString("N2")
+                        </span>
+                    </div>
                 </div>
             }
         </div>
@@ -102,6 +106,33 @@
             else
             {
                 <p class="mu text-center py-3">No active signals</p>
+            }
+        </div>
+    </div>
+
+    <!-- Market News -->
+    <div class="p p-sig">
+        <header>
+            <h3>Market News</h3>
+        </header>
+        <div class="bd">
+            @if (Model.News != null && Model.News.Any())
+            {
+                <ul class="feed">
+                    @foreach (var item in Model.News)
+                    {
+                        <li>
+                            <em class="@(item.Score > 0 ? "positive" : item.Score < 0 ? "negative" : "neutral")">
+                                @item.Headline
+                            </em>
+                            <small class="mu">@item.Source</small>
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="mu text-center py-3">No news available</p>
             }
         </div>
     </div>

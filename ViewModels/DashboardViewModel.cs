@@ -1,4 +1,5 @@
 // ViewModels/DashboardViewModel.cs
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using TradingBot.Models;
 
@@ -20,6 +21,7 @@ namespace TradingBot.ViewModels
         public List<Trade> OpenTrades { get; set; } = new();
         public List<Signal> ActiveSignals { get; set; } = new();
         public Dictionary<string, decimal> LivePrices { get; set; } = new();
+        public List<NewsSentiment> News { get; set; } = new List<NewsSentiment>();
     }
 
     public class TradeViewModel

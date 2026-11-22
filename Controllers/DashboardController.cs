@@ -1,6 +1,8 @@
 // Controllers/DashboardController.cs
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using TradingBot.Data;
 using TradingBot.Services;
 using TradingBot.ViewModels;
 
@@ -12,15 +14,18 @@ namespace TradingBot.Controllers
         private readonly ITradingBotService _tradingService;
         private readonly ISignalService _signalService;
         private readonly IMarketDataService _marketService;
+        private readonly AppDbContext _context;
 
         public DashboardController(
             ITradingBotService tradingService,
             ISignalService signalService,
-            IMarketDataService marketService)
+            IMarketDataService marketService,
+            AppDbContext context)
         {
             _tradingService = tradingService;
             _signalService = signalService;
             _marketService = marketService;
+            _context = context;
         }
 
         public async Task<IActionResult> Index()
@@ -49,7 +54,11 @@ namespace TradingBot.Controllers
                 RecentTrades = (List<Models.Trade>)stats["RecentTrades"],
                 OpenTrades = (List<Models.Trade>)stats["OpenTradeList"],
                 ActiveSignals = signals,
-                LivePrices = prices
+                LivePrices = prices,
+                News = await _context.NewsSentiments
+                    .OrderByDescending(n => n.PublishedAt)
+                    .Take(5)
+                    .ToListAsync()
             };
 
             return View(viewModel);
