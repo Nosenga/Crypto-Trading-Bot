@@ -63,7 +63,16 @@
                     <div>
                         <strong>@price.Key.Replace("USDT", "")</strong>
                         <br />
+
                         <small class="mu">/USDT</small>
+
+                        <small class="text-muted">/USDT</small>
+                    </div>
+                    <div class="text-end">
+                        <span class="price-live fw-bold" data-symbol="@price.Key">
+                            $@price.Value.ToString("N2")
+                        </span>
+
                     </div>
                     <span class="price-live fw-bold" data-symbol="@price.Key">$@price.Value.ToString("N2")</span>
                 </div>
