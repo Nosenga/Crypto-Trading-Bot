@@ -1,5 +1,7 @@
 // wwwroot/js/dashboard.js
 document.addEventListener('DOMContentLoaded', function () {
+
+
     // SignalR Connection
     const connection = new signalR.HubConnectionBuilder()
         .withUrl('/tradingHub')
@@ -29,6 +31,7 @@ document.addEventListener('DOMContentLoaded', function () {
             'Last update: ' + new Date().toLocaleTimeString();
     });
 
+ 
     // Portfolio chart
     initEquityChart();
 });

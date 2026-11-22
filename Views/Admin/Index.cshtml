@@ -4,32 +4,47 @@
     ViewData["Title"] = "Admin - Kill Switch Controls";
 }
 
-<h2>Admin - Kill Switch Controls</h2>
-
-<div class="admin-panel">
-    <h3>Safety Status</h3>
-    
-    <div class="status-box @(Model.IsKillSwitchActive ? "active" : "inactive")">
-        <p>Trading: <strong>@(Model.IsArmed ? "ARMED" : "DISARMED — SHADOW MODE")</strong></p>
-        <p>Kill Switch: <strong>@(Model.IsKillSwitchActive ? "ACTIVE" : "INACTIVE")</strong></p>
-        <p>High Water Mark: <strong>$@Model.HighWaterMark.ToString("N2")</strong></p>
-        <p>
-            Daily Loss Limit (@Model.DailyLossLimitPercent.ToString("N1")%):
-            <strong>@(Model.IsDailyLossLimitBreached ? "HIT" : "WITHIN LIMIT")</strong>
-        </p>
-        <p>
-            Today's start balance: $@Model.StartOfDayBalance.ToString("N2") |
-            Current balance: $@Model.CurrentBalance.ToString("N2") |
-            Daily loss: @Model.DailyLossPercent.ToString("N2")%
-        </p>
-        @if (Model.KillSwitchAt.HasValue)
-        {
-            <p>Activated: @Model.KillSwitchAt.Value.ToString("yyyy-MM-dd HH:mm:ss UTC")</p>
-        }
-        @if (!string.IsNullOrEmpty(Model.KillSwitchReason))
-        {
-            <p>Reason: @Model.KillSwitchReason</p>
-        }
+<div class="grid">
+    <!-- Safety Status -->
+    <div class="p p-risk">
+        <header>
+            <h3>Safety Status</h3>
+            <span class="@(Model.IsKillSwitchActive ? "dn" : "up")">
+                @(Model.IsKillSwitchActive ? "KILL SWITCH ACTIVE" : "SYSTEM NORMAL")
+            </span>
+        </header>
+        <div class="bd">
+            <div class="sum">
+                <dt>Trading Mode</dt>
+                <dd class="fw-bold">@(Model.IsArmed ? "ARMED" : "DISARMED — SHADOW MODE")</dd>
+                <dt>Kill Switch</dt>
+                <dd class="@(Model.IsKillSwitchActive ? "dn" : "up")">
+                    @(Model.IsKillSwitchActive ? "ACTIVE" : "INACTIVE")
+                </dd>
+                <dt>High Water Mark</dt>
+                <dd>$@Model.HighWaterMark.ToString("N2")</dd>
+                <dt>Daily Loss Limit (@Model.DailyLossLimitPercent.ToString("N1")%)</dt>
+                <dd class="@(Model.IsDailyLossLimitBreached ? "dn" : "up")">
+                    <strong>@(Model.IsDailyLossLimitBreached ? "HIT" : "WITHIN LIMIT")</strong>
+                </dd>
+                <dt>Today's Start Balance</dt>
+                <dd>$@Model.StartOfDayBalance.ToString("N2")</dd>
+                <dt>Current Balance</dt>
+                <dd>$@Model.CurrentBalance.ToString("N2")</dd>
+                <dt>Daily Loss</dt>
+                <dd>@Model.DailyLossPercent.ToString("N2")%</dd>
+                @if (Model.KillSwitchAt.HasValue)
+                {
+                    <dt>Activated</dt>
+                    <dd>@Model.KillSwitchAt.Value.ToString("yyyy-MM-dd HH:mm:ss UTC")</dd>
+                }
+                @if (!string.IsNullOrEmpty(Model.KillSwitchReason))
+                {
+                    <dt>Reason</dt>
+                    <dd>@Model.KillSwitchReason</dd>
+                }
+            </div>
+        </div>
     </div>
 
     <h3>Controls</h3>

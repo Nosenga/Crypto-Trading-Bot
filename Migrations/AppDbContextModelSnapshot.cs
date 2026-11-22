@@ -203,6 +203,9 @@ namespace Trading_Bot_Website.Migrations
                     b.Property<decimal>("StartOfDayBalance")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<decimal>("StartOfDayEquity")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<decimal>("TotalEquity")
                         .HasColumnType("decimal(18,2)");
 
@@ -232,6 +235,7 @@ namespace Trading_Bot_Website.Migrations
                             MaxDrawdown = 0m,
                             RealizedPnL = 0m,
                             StartOfDayBalance = 1000000m,
+                            StartOfDayEquity = 1000000m,
                             TotalEquity = 1000000m,
                             TotalTrades = 0,
                             UnrealizedPnL = 0m,

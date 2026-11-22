@@ -19,6 +19,7 @@ public class BinanceBroker : IBrokerClient
     private readonly string _apiKey;
     private readonly string _apiSecret;
     private readonly bool _enableLiveOrders;
+    private readonly bool _useTestnet;
     private readonly ISafetyService _safety;
     private readonly IPriceFeed _priceFeed;
     private readonly ConcurrentDictionary<string, (decimal StepSize, decimal MinNotional, decimal TickSize)> _filters =
@@ -52,6 +53,8 @@ public class BinanceBroker : IBrokerClient
 
         _enableLiveOrders = configuration.GetValue<bool>(
             "TradingBot:Binance:EnableLiveOrders");
+        _useTestnet = configuration.GetValue<bool>(
+            "TradingBot:Binance:UseTestnet", true);
     }
 
     private BinanceClient CreateClient()
@@ -62,8 +65,9 @@ public class BinanceBroker : IBrokerClient
             SpotApiOptions = new BinanceApiClientOptions
             {
                 AutoTimestamp = true,
-                // BaseAddress = "https://api.binance.com",
-                BaseAddress = "https://testnet.binance.vision", // For testing on Binance Spot Testnet
+                BaseAddress = _useTestnet
+                    ? "https://testnet.binance.vision"
+                    : "https://api.binance.com"
             }
         });
     }
@@ -474,6 +478,41 @@ public class BinanceBroker : IBrokerClient
     public Task SyncOpenTradesAsync(AppDbContext db, ILogger logger) =>
         Task.CompletedTask;
 
+    public async Task<bool> CancelOcoAsync(
+        string symbol, string listClientOrderId)
+    {
+        await _rateLimiter.WaitAsync();
+        try
+        {
+            using var client = CreateClient();
+            var result = long.TryParse(listClientOrderId, out var orderListId)
+                ? await client.SpotApi.Trading.CancelOcoOrderAsync(
+                    symbol, orderListId: orderListId)
+                : await client.SpotApi.Trading.CancelOcoOrderAsync(
+                    symbol, listClientOrderId: listClientOrderId);
+
+            if (!result.Success)
+            {
+                _logger.LogWarning(
+                    "Failed to cancel OCO {Id}: {Error}",
+                    listClientOrderId, result.Error?.Message);
+                return false;
+            }
+
+            _logger.LogInformation("Successfully cancelled OCO {Id}", listClientOrderId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception cancelling OCO {Id}", listClientOrderId);
+            return false;
+        }
+        finally
+        {
+            _rateLimiter.Release();
+        }
+    }
+
     public Task<string> PlaceMarketOrderAsync(
         string symbol,
         string side,
@@ -495,10 +534,6 @@ public class BinanceBroker : IBrokerClient
         bool allowWhenKillSwitchActive)
     {
         EnsureLiveOrdersAreEnabled();
-
-        if (_safety.IsKillSwitchActive && !allowWhenKillSwitchActive)
-            throw new InvalidOperationException(
-                $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
 
         if (quantity <= 0)
             throw new ArgumentOutOfRangeException(
@@ -544,6 +579,10 @@ public class BinanceBroker : IBrokerClient
 
         try
         {
+            if (_safety.IsKillSwitchActive && !allowWhenKillSwitchActive)
+                throw new InvalidOperationException(
+                    $"Kill switch is active: {_safety.KillSwitchReason ?? "operator panic stop"}");
+
             using var client = CreateClient();
 
             // Binance.Net v8.6.0 order is: symbol, side, type.

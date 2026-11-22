@@ -227,6 +227,11 @@ namespace TradingBot.Services
             return Task.FromResult(true);
         }
 
+        public Task<bool> CancelOcoAsync(string symbol, string listClientOrderId)
+        {
+            return Task.FromResult(true);
+        }
+
         public Task<object> GetOrderStatusAsync(string orderId)
         {
             return Task.FromResult<object>(new

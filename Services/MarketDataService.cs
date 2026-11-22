@@ -81,10 +81,11 @@ namespace TradingBot.Services
             // MACD
             for (int i = 25; i < data.Count; i++)
             {
-                if (data[i].EMA12.HasValue && data[i].EMA26.HasValue)
+                if (data[i].EMA12 is decimal ema12Value &&
+                    data[i].EMA26 is decimal ema26Value)
                 {
                     data[i].MACDLine = Math.Round(
-                        data[i].EMA12.Value - data[i].EMA26.Value, 8);
+                        ema12Value - ema26Value, 8);
                 }
             }
 

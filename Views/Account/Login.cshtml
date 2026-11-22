@@ -1,36 +1,28 @@
+<!-- Views/Account/Login.cshtml -->
 @model TradingBot.ViewModels.LoginViewModel
-
+@using TradingBot.Models
 @{
     ViewData["Title"] = "Login - TradingBot Pro";
 }
 
-<h2>Login</div>
-
-<div class="admin-panel">
-    <h3>Admin Login</h3>
-    
-    <form method="post" asp-controller="Account" asp-action="Login" class="p-4">
-        <div asp-validation-summary="All" class="text-danger mb-3"></div>
+<div id="login" class="ov">
+    <div class="box">
+        <h2 style="font-weight: 700; letter-spacing:.09em; text-transform:uppercase; color:var(--mu); font-size:20px; margin-bottom:24px">Login</h2>
         
-        <div class="mb-3">
-            <label asp-for="Username" class="form-label">Username</label>
-            <input asp-for="Username" class="form-control" required />
-        </div>
-        
-        <div class="mb-3">
-            <label asp-for="Password" class="form-label">Password</label>
-            <input asp-for="Password" class="form-control" type="password" required />
-        </div>
-        
-        <button type="submit" class="btn btn-primary w-100">Sign In</button>
-    </form>
-    
-    <hr />
-    <p class="text-center small">
-        <a asp-controller="Account" asp-action="Login">Forgot password?</a>
-    </p>
+        <form method="post" asp-controller="Account" asp-action="Login">
+            <div style="margin-bottom:16px">
+                <label style="display:block;font-size:11px;color:var(--mu);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px">Username</label>
+                <input style="background:transparent;border:1px solid var(--bd);color:var(--tx);padding:7px 9px;font:13px var(--mono)" asp-for="Username" required />
+            </div>
+            
+            <div style="margin-bottom:16px">
+                <label style="display:block;font-size:11px;color:var(--mu);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px">Password</label>
+                <input style="background:transparent;border:1px solid var(--bd);color:var(--tx);padding:7px 9px;font:13px var(--mono)" asp-for="Password" type="password" required />
+            </div>
+            
+            <button type="submit" style="width:100%;padding:9px;background:var(--dn);color:#fff;border:0;font:700 12px var(--mono);letter-spacing:.1em;cursor;margin-top:14px">
+                <i class="fas fa-sign-in me-2"></i> Login
+            </button>
+        </form>
+    </div>
 </div>
-
-<footer class="mt-4 small text-center">
-    <p>TradingBot Pro &copy; 2026</p>
-</footer>

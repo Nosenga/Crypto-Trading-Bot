@@ -31,6 +31,7 @@ namespace TradingBot.Core.Interfaces
             string symbol, decimal stopPrice, decimal limitPrice);
         Task SyncOpenTradesAsync(AppDbContext db, ILogger logger);
         Task<bool> CancelOrderAsync(string orderId);
+        Task<bool> CancelOcoAsync(string symbol, string listClientOrderId);
         
         // 4. Order Status
         Task<object> GetOrderStatusAsync(string orderId); // You can create an OrderResponse model for this

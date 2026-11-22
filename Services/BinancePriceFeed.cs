@@ -14,12 +14,15 @@ namespace TradingBot.Services
         private readonly ILogger<BinancePriceFeed> _logger;
         private readonly string _apiKey;
         private readonly string _apiSecret;
+        private readonly bool _useTestnet;
 
         public BinancePriceFeed(ILogger<BinancePriceFeed> logger, IConfiguration configuration)
         {
             _logger = logger;
             _apiKey = configuration["TradingBot:Binance:ApiKey"] ?? string.Empty;
             _apiSecret = configuration["TradingBot:Binance:ApiSecret"] ?? string.Empty;
+            _useTestnet = configuration.GetValue<bool>(
+                "TradingBot:Binance:UseTestnet", true);
         }
 
         private BinanceClient CreateClient()
@@ -32,8 +35,9 @@ namespace TradingBot.Services
                 SpotApiOptions = new BinanceApiClientOptions
                 {
                     AutoTimestamp = true,
-                    // BaseAddress = "https://api.binance.com"
-                    BaseAddress = "https://testnet.binance.vision"
+                    BaseAddress = _useTestnet
+                        ? "https://testnet.binance.vision"
+                        : "https://api.binance.com"
                 }
             });
         }

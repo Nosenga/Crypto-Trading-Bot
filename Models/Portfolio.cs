@@ -10,6 +10,7 @@ namespace TradingBot.Models
         {
             HighWaterMark = InitialBalance;
             StartOfDayBalance = CurrentBalance;
+            StartOfDayEquity = TotalEquity > 0 ? TotalEquity : CurrentBalance;
             LastRiskCheckDate = DateTime.UtcNow;
         }
 
@@ -30,6 +31,9 @@ namespace TradingBot.Models
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal StartOfDayBalance { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal StartOfDayEquity { get; set; }
 
         public DateTime LastRiskCheckDate { get; set; }
 

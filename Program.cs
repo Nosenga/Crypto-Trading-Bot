@@ -9,6 +9,17 @@ using TradingBot.Core.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var adminPasswordHash = builder.Configuration["Admin:PasswordHash"];
+if (string.IsNullOrWhiteSpace(adminPasswordHash))
+{
+    const string message =
+        "Admin:PasswordHash is required. Generate a BCrypt hash with " +
+        "TradingBot.Tools.PasswordHasher.Hash(plaintext), then set it with " +
+        "`dotnet user-secrets set \"Admin:PasswordHash\" \"<hash>\"`.";
+    Console.Error.WriteLine(message);
+    throw new InvalidOperationException(message);
+}
+
 // --- 1. DATABASE ---
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -124,6 +135,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate(); // apply migrations if any
+    db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
 
     if (tradingMode.Equals("Live", StringComparison.OrdinalIgnoreCase))
     {

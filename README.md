@@ -8,11 +8,15 @@ A fully-featured, production-ready algorithmic trading bot built with ASP.NET Co
 
 - **Live Binance Integration:** Fetches real-time prices directly from Binance via a secure `IBrokerClient` abstraction.
 - **Automated Strategy Engine:** Built-in support for Moving Average Crossover, RSI Overbought/Oversold, MACD, and Bollinger Bands.
+- **Obsidian UI:** Dark, minimalist, data-dense interface replacing Bootstrap — custom-styled panels (.p), grids (.grid), KPI cards (.kpis), and toast notifications.
 - **Real-Time Dashboard:** Interactive UI with Chart.js, showing live equity curves, open positions, and trade history.
 - **Multi-Mode Support:**
   - **Paper Mode:** Trade with fake money using live Binance data (perfect for testing).
   - **Live Mode:** Execute real market orders on Binance with built-in safety guards.
-- **Risk Management:** Fixed fractional position sizing (`RiskPerTradePercent`), hard-coded position caps (`MaxPositionSize`), and configurable Stop-Loss/Take-Profit limits.
+- **Risk Management:** Fixed fractional position sizing (`RiskPerTradePercent`), configurable position caps (`MaxPositionSize` and `MaxOpenPositions`), and configurable Stop-Loss/Take-Profit limits.
+- **Daily Loss Limit:** Auto-disables trading when daily loss threshold is hit, with console warning "Daily Loss Limit Hit".
+- **Kill Switch:** Emergency halt for all trading activity, activatable/deactivatable by admin.
+- **Shadow Mode:** All trades executed in "paper" mode only — console logs `[Shadow Mode] Would have bought {Quantity} {Symbol}`, no orders sent to Binance.
 - **Backtesting Engine:** Simulate historical performance and calculate Sharpe Ratio, Max Drawdown, and Win Rate.
 - **SignalR Real-Time Updates:** WebSocket-style live price ticker updates directly on the dashboard.
 
@@ -23,7 +27,7 @@ A fully-featured, production-ready algorithmic trading bot built with ASP.NET Co
 - **Real-Time Communication:** SignalR
 - **Exchange API:** Binance.Net (v8.6.0)
 - **Architecture:** Repository Pattern, Adapter Pattern (`IBrokerClient`), BackgroundService Worker
-- **Frontend:** Bootstrap 5, Chart.js, FontAwesome
+- **Frontend:** Obsidian UI design system (replacing Bootstrap 5), Chart.js, FontAwesome
 
 ## 📂 Project Structure
 
@@ -53,6 +57,9 @@ dotnet user-secrets set "Admin:PasswordHash" "<the hash>"
 ```
 
 Initialize user-secrets only once per project. The password hash is kept out of `appsettings.json`.
+The application refuses to start if `Admin:PasswordHash` is empty. Generate the
+hash by calling `TradingBot.Tools.PasswordHasher.Hash(plaintext)` from a local
+C# runner, then store the result with the command above.
 
 ## 🔑 Configuration (appsettings.json)
 
@@ -60,13 +67,18 @@ Initialize user-secrets only once per project. The password hash is kept out of 
 "TradingBot": {
   "Mode": "Paper", // Change to "Live" to use real Binance data
   "MaxOpenPositions": 10,
-  "MaxPositionSize": 500, // Hard cap on position value per trade
+  "MaxPositionSize": 1000, // Hard cap on position value per trade
   "RiskPerTradePercent": 1.0,
+  "RiskManagement": {
+    "DailyLossLimitPercent": 3.0,
+    "MaxDrawdownLimitPercent": 10.0
+  },
   "DefaultStopLossPercent": 2.0,
   "DefaultTakeProfitPercent": 5.0,
   "Binance": {
     "ApiKey": "YOUR_REAL_KEY_HERE",
     "ApiSecret": "YOUR_REAL_SECRET_HERE",
-    "EnableLiveOrders": false // Set to true ONLY after explicit safety review
+    "EnableLiveOrders": false, // Set to true ONLY after explicit safety review
+    "UseTestnet": true // Defaults to Testnet; set false only for approved live trading
   }
 }
